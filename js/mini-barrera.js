@@ -71,6 +71,8 @@ const BARR_CODE = `void hTolva(int n) {                  // una por tolva
     <g id="silos"></g>
     <rect id="canal" x="60" y="190" width="440" height="30" rx="8" fill="var(--bg-code)" stroke="var(--border-strong)" stroke-width="1.5"/>
     <rect id="valve" x="262" y="190" width="36" height="30" fill="var(--border-strong)"/>
+    <text id="valveLabel" x="280" y="236" text-anchor="middle" font-size="11" font-weight="700" fill="var(--text-3)">compuerta cerrada</text>
+    <text id="stateLabel" x="280" y="262" text-anchor="middle" font-size="13" font-weight="700" fill="var(--text)">esperando tolvas…</text>
   </svg>`;
 
   let built = false;
@@ -81,17 +83,24 @@ const BARR_CODE = `void hTolva(int n) {                  // una por tolva
     for (let i = 0; i < 3; i++) {
       const x = 80 + i * 140;
       const h = Math.round(96 * S.nivel[i]);
+      const th = m.threads.find((t) => t.name === "hTolva" + (i + 1));
       html += `<g>
         <path d="M${x} 60 L${x + 24} 30 L${x + 106} 30 L${x + 130} 60 L${x + 130} 190 L${x} 190 Z"
           fill="none" stroke="var(--border-strong)" stroke-width="2"/>
         <rect x="${x + 10}" y="${190 - h}" width="110" height="${h}" fill="var(--accent-soft)"/>
         <rect x="${x + 10}" y="${190 - h}" width="110" height="2" fill="var(--accent)"/>
+        <text x="${x + 65}" y="74" text-anchor="middle" font-size="12" font-weight="700" fill="var(--text)">TOLVA ${i + 1}</text>
+        <text x="${x + 65}" y="92" text-anchor="middle" font-size="10" fill="var(--text-3)">
+          ${S.llenando[i] ? "llenando…" : S.vaciando[i] ? "descargando" : th.state === "blocked" ? "esperando" : "lista"}</text>
       </g>`;
     }
     silos.innerHTML = html;
 
     const abierta = S.abierta || S.vaciando.some(Boolean);
+    body.querySelector("#valveLabel").textContent = abierta ? "compuerta ABIERTA · descarga simultánea" : "compuerta cerrada";
     body.querySelector("#valve").setAttribute("fill", abierta ? "var(--accent)" : "var(--border-strong)");
+    body.querySelector("#stateLabel").textContent =
+      abierta ? "¡Las tres tolvas descargan a la vez!" : `${S.nListas} de 3 tolvas listas`;
   }
 
   function renderKPIs(m) {
