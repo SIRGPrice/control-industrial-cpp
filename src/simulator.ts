@@ -54,19 +54,19 @@ const stationDefinitions = [
 ]
 
 export const simulatedCode = [
-  { line: 1, text: 'std::counting_semaphore<3> permits{2};' },
-  { line: 2, text: 'BoundedQueue<Batch> buffer{6};' },
-  { line: 3, text: 'std::jthread feeder([&](std::stop_token stop) {' },
-  { line: 4, text: '  while (!stop.stop_requested()) {' },
-  { line: 5, text: '    if (!buffer.try_push(batch)) {' },
-  { line: 6, text: '      metrics.blocked.fetch_add(1);' },
-  { line: 7, text: '    }' },
-  { line: 8, text: 'std::jthread station([&](std::stop_token stop) {' },
-  { line: 9, text: '  permits.acquire();' },
-  { line: 10, text: '  Batch item = buffer.pop(stop);' },
-  { line: 11, text: '  process(item);' },
-  { line: 12, text: '  permits.release();' },
-  { line: 13, text: '}); // jthread solicita stop y hace join' },
+  { line: 1, text: 'std::counting_semaphore<3> permits{2}; // Define dos permisos para tres slots físicos.' },
+  { line: 2, text: 'BoundedQueue<Batch> buffer{6}; // Limita el trabajo pendiente a seis lotes.' },
+  { line: 3, text: 'std::jthread feeder([&](std::stop_token stop) { // Arranca el productor con cancelación.' },
+  { line: 4, text: '  while (!stop.stop_requested()) { // Revisa la orden de parada en cada ciclo.' },
+  { line: 5, text: '    if (!buffer.try_push(batch)) { // Intenta publicar sin superar la capacidad.' },
+  { line: 6, text: '      metrics.blocked.fetch_add(1); // Cuenta cada entrada que activa backpressure.' },
+  { line: 7, text: '    } // Cierra la rama que registra el buffer lleno.' },
+  { line: 8, text: 'std::jthread station([&](std::stop_token stop) { // Arranca un consumidor especializado.' },
+  { line: 9, text: '  permits.acquire(); // Espera capacidad física antes de trabajar.' },
+  { line: 10, text: '  Batch item = buffer.pop(stop); // Extrae un lote y puede despertar por stop.' },
+  { line: 11, text: '  process(item); // Ejecuta la operación propia de la estación.' },
+  { line: 12, text: '  permits.release(); // Devuelve el permiso al finalizar el proceso.' },
+  { line: 13, text: '}); // El jthread solicita stop y hace join automáticamente.' },
 ]
 
 function normalizeConfig(config: PlantConfig): PlantConfig {
