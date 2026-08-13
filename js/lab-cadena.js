@@ -60,7 +60,7 @@ const CADENA_CODE = {
 
   m.cola("cola1", 2).cola("cola2", 2).cola("cola3", 2).cola("colaSalida", 3).cola("colaTel", 4);
 
-  m.hilo("hAlimentador", "#8b5cf6", (m, th) => {
+  m.hilo("hAlimentador", "#8b5cf6", function* (m, th) {
     const p = P(m, th);
     while (true) {
       yield p.work("Generando pieza", 3, 3, null, () => { S.serial++; S.stats.inyectadas++; });
@@ -68,7 +68,7 @@ const CADENA_CODE = {
     }
   });
 
-  const maquina = (nombre, color, qIn, qOut, lineaPush, ticks, tag) => (m, th) => {
+  const maquina = (nombre, color, qIn, qOut, lineaPush, ticks, tag) => function* (m, th) {
     const p = P(m, th);
     while (true) {
       const pieza = yield p.pop(qIn, 3);
@@ -82,7 +82,7 @@ const CADENA_CODE = {
   m.hilo("hMaquina2", "#f76b15", maquina("hMaquina2", "#f76b15", "cola2", "cola3", 5, 7, "M2"));
   m.hilo("hMaquina3", "#3b82f6", maquina("hMaquina3", "#3b82f6", "cola3", "colaSalida", 5, 4, "M3"));
 
-  m.hilo("hSalida", "#46a758", (m, th) => {
+  m.hilo("hSalida", "#46a758", function* (m, th) {
     const p = P(m, th);
     while (true) {
       const pieza = yield p.pop("colaSalida", 3);
@@ -90,7 +90,7 @@ const CADENA_CODE = {
     }
   });
 
-  m.hilo("hSupervisor", "#12a594", (m, th) => {
+  m.hilo("hSupervisor", "#12a594", function* (m, th) {
     const p = P(m, th);
     while (true) {
       const msg = yield p.pop("colaTel", 3);

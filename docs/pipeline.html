@@ -19,6 +19,13 @@
       orden, y cada etapa trabaja a la vez sobre piezas distintas. El truco para que el paralelismo sea real es que
       cada etapa sea un hilo y cada junta, una pareja productor/consumidor.</p>
 
+      <h2>La instalación en acción</h2>
+      <p>Una cadena de tres máquinas conectadas por cintas (colas): la etapa 2 es más lenta y hace de cuello de
+      botella. Arranca la simulación y observa cómo las colas de su entrada se llenan y la presión sube hacia la
+      tolva (backpressure).</p>
+      <div id="lab" class="lab-shell"></div>
+      <p class="lab-note">Consejo: fíjate en qué hilo queda bloqueado primero cuando la línea se satura.</p>
+
       <h2>El esquema general</h2>
       <p>Para K etapas se necesitan K relaciones productor/consumidor: la de entrada de la primera etapa y la de
       cada junta. En el estilo clásico, dos vectores de semáforos:</p>
@@ -93,5 +100,7 @@ void mueve(int origen, int destino) {
     <aside id="toc"></aside>
   </main>
   <script src="../js/app.js"></script>
+  <script src="../js/motor.js"></script>
+  <script src="../js/mini-pipeline.js"></script>
 </body>
 </html>

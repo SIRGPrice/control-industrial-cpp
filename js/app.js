@@ -76,7 +76,7 @@ const SITE = {
 };
 
 (function () {
-  const script = document.currentScript;
+  const script = document.currentScript || { getAttribute: () => "" };
   const src = script.getAttribute("src") || "";
   const depth = (src.match(/\.\.\//g) || []).length;
   const BASE = "../".repeat(depth);
@@ -90,12 +90,7 @@ const SITE = {
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
       </button>
       <a class="brand" href="${BASE}index.html">
-        <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
-          <rect x="7" y="1.5" width="10" height="21" rx="3.2" fill="#3b3f4a"/>
-          <circle cx="12" cy="6.3" r="2.6" fill="#ef4444"/>
-          <circle cx="12" cy="12" r="2.6" fill="#f59e0b"/>
-          <circle cx="12" cy="17.7" r="2.6" fill="#22c55e"/>
-        </svg>
+        <img class="brand-logo" src="${BASE}assets/llama.svg" alt="">
         <span>${SITE.name}<small> · ${SITE.sub}</small></span>
       </a>
       <div id="searchbox">

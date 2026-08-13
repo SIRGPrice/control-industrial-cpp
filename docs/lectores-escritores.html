@@ -20,6 +20,13 @@
       El patrón lectores–escritores lo permite, y en planta aparece en tablas de configuración y, sorprendentemente,
       en los pasillos de AGV.</p>
 
+      <h2>La instalación en acción</h2>
+      <p>Tres AGV cruzan una zona de inspección en paralelo (lectores) mientras una carretilla de mantenimiento la
+      ocupa en exclusiva (escritor). Arranca la simulación y observa cómo los AGV comparten el carril a la vez,
+      pero esperan a que la carretilla termine.</p>
+      <div id="lab" class="lab-shell"></div>
+      <p class="lab-note">Consejo: mira el valor de <code>sCarril</code> cuando entra el primer lector y cuando sale el último.</p>
+
       <h2>El patrón básico</h2>
       <ul>
         <li>Cualquier número de lectores puede estar dentro a la vez.</li>
@@ -108,5 +115,7 @@ void escribeConsigna(int regulador, double v) {
     <aside id="toc"></aside>
   </main>
   <script src="../js/app.js"></script>
+  <script src="../js/motor.js"></script>
+  <script src="../js/mini-lw.js"></script>
 </body>
 </html>

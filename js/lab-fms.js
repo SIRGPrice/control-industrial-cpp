@@ -72,7 +72,7 @@ const FMS_CODE = {
    .sem("sRobot", 1);
 
   /* ---- hilo de entrada ---- */
-  m.hilo("hEntrada", "#e5484d", (m, th) => {
+  m.hilo("hEntrada", "#e5484d", function* (m, th) {
     const p = P(m, th);
     while (true) {
       yield p.poll(() => S.enEntrada, 3);
@@ -92,7 +92,7 @@ const FMS_CODE = {
   });
 
   /* ---- hilo de la prensa ---- */
-  m.hilo("hPrensa", "#f76b15", (m, th) => {
+  m.hilo("hPrensa", "#f76b15", function* (m, th) {
     const p = P(m, th);
     while (true) {
       yield p.wait("scEntradaPrensa", 3);
@@ -114,7 +114,7 @@ const FMS_CODE = {
   });
 
   /* ---- hilo del CNC ---- */
-  m.hilo("hCNC", "#3b82f6", (m, th) => {
+  m.hilo("hCNC", "#3b82f6", function* (m, th) {
     const p = P(m, th);
     while (true) {
       yield p.wait("scPrensaCNC", 3);
@@ -136,7 +136,7 @@ const FMS_CODE = {
   });
 
   /* ---- hilo de salida ---- */
-  m.hilo("hSalida", "#46a758", (m, th) => {
+  m.hilo("hSalida", "#46a758", function* (m, th) {
     const p = P(m, th);
     while (true) {
       yield p.wait("scCNCSalida", 3);

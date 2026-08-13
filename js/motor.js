@@ -66,8 +66,9 @@ class Motor {
   }
 
   _wakePopWaiter(q) {
-    if (q.popWaiters.length) {
+    if (q.popWaiters.length && q.items.length) {
       const th = this.threads[q.popWaiters.shift()];
+      th.resumeValue = q.items.shift();
       th.state = "ready";
       th.blockOn = null;
       this.log(`${th.name} desbloqueado: la cola ${q.name} ya tiene datos`, "ev-wake");
@@ -76,10 +77,14 @@ class Motor {
 
   _wakePushWaiter(q) {
     if (q.pushWaiters.length) {
-      const th = this.threads[q.pushWaiters.shift()];
+      const w = q.pushWaiters.shift();
+      const th = this.threads[w.id];
+      q.items.push(w.item);
+      q.totalIn++;
+      th.resumeValue = true;
       th.state = "ready";
       th.blockOn = null;
-      this.log(`${th.name} desbloqueado: hay hueco en la cola ${q.name}`, "ev-wake");
+      this.log(`${th.name} desbloqueado: hay hueco en la cola ${q.name} (push completado)`, "ev-wake");
     }
   }
 
@@ -141,7 +146,7 @@ class Motor {
           if (c.fx) c.fx();
           return;
         }
-        q.pushWaiters.push(th.id);
+        q.pushWaiters.push({ id: th.id, item: c.item });
         th.state = "blocked";
         th.blockOn = `push(${c.q}) llena`;
         this.log(`${th.name} BLOQUEADO: la cola ${c.q} está llena (${q.cap}/${q.cap})`, "ev-block");
@@ -381,7 +386,7 @@ class LabUI {
       const target = v.lineEls.find((el) => +el.dataset.n === th.line);
       if (target) {
         target.classList.add("hl");
-        target.scrollIntoView({ block: "nearest" });
+        if (target.scrollIntoView) target.scrollIntoView({ block: "nearest" });
       }
       const st = v.stateEl;
       if (th.state === "done") { st.textContent = "fin"; st.className = "tc-state done"; }

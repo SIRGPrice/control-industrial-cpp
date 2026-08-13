@@ -20,6 +20,13 @@
       bloquean si la cola está llena; los consumidores retiran y se bloquean si está vacía. Aquí la construimos
       desde cero.</p>
 
+      <h2>La instalación en acción</h2>
+      <p>Un pulmón de tres posiciones separa fabricación y procesado: puro paso de mensajes con push/pop
+      bloqueantes. Arranca la simulación y observa el <strong>backpressure</strong>: cuando el pulmón se llena, la
+      fabricación se bloquea hasta que el consumidor libera un hueco.</p>
+      <div id="lab" class="lab-shell"></div>
+      <p class="lab-note">Consejo: cuenta las veces que la fabricación queda parada y relaciónalo con la ocupación media.</p>
+
       <h2>Por qué std::queue no basta</h2>
       <p><code>std::queue</code> no es thread-safe: si el hilo de la cinta hace <code>push</code> mientras el de la
       máquina hace <code>pop</code>, hay data race. Y aunque se protegiera con un mutex, faltaría la segunda mitad
@@ -131,5 +138,7 @@ void push(T item) {
     <aside id="toc"></aside>
   </main>
   <script src="../js/app.js"></script>
+  <script src="../js/motor.js"></script>
+  <script src="../js/mini-colas.js"></script>
 </body>
 </html>

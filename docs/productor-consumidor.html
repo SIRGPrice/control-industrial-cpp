@@ -19,6 +19,13 @@
       y entre medias un buffer de capacidad finita. Se gobierna con dos semáforos (huecos y elementos) y, si el
       buffer es una estructura compartida, un mutex.</p>
 
+      <h2>La instalación en acción</h2>
+      <p>Un horno de cocción separa la preparación del enfriado: pulsa <strong>Ejecutar</strong> y observa cómo la
+      carga se bloquea cuando el horno está lleno y la descarga cuando está vacío, y cómo el mutex protege la cola
+      del horno.</p>
+      <div id="lab" class="lab-shell"></div>
+      <p class="lab-note">Consejo: usa ⏭ Paso para ver qué línea de cada hilo se ejecuta y por qué.</p>
+
       <h2>El problema</h2>
       <ul>
         <li>El productor no puede depositar si el buffer está <strong>lleno</strong>: debe esperar un hueco.</li>
@@ -102,5 +109,7 @@ void hConsumidor() {
     <aside id="toc"></aside>
   </main>
   <script src="../js/app.js"></script>
+  <script src="../js/motor.js"></script>
+  <script src="../js/mini-pc.js"></script>
 </body>
 </html>

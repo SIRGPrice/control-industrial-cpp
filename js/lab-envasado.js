@@ -37,7 +37,7 @@ const ENV_CODE = {
   m.sem("sHuecos", 4).sem("sBotellas", 0).sem("sMutex", 1);
   m.cola("buffer", 4);
 
-  m.hilo("hEnvasadora", "#e5484d", (m, th) => {
+  m.hilo("hEnvasadora", "#e5484d", function* (m, th) {
     const p = P(m, th);
     while (true) {
       yield p.work("Llenando botella", 3, 3 + Math.floor(Math.random() * 3), () => { S.filling = true; }, () => { S.filling = false; });
@@ -50,7 +50,7 @@ const ENV_CODE = {
     }
   });
 
-  m.hilo("hEmpaquetadora", "#46a758", (m, th) => {
+  m.hilo("hEmpaquetadora", "#46a758", function* (m, th) {
     const p = P(m, th);
     while (true) {
       yield p.wait("sBotellas", 3);

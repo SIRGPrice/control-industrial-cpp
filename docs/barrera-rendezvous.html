@@ -19,6 +19,13 @@
       punto donde N hilos deben presentarse todos antes de que cualquiera siga; un rendezvous es la cita entre dos.
       En planta aparecen en fases de proceso, lotes y arranques coordinados.</p>
 
+      <h2>La instalación en acción</h2>
+      <p>Tres tolvas se llenan a ritmos distintos, pero descargan <strong>solo cuando las tres están listas</strong>:
+      la compuerta se abre a la vez para todas. Arranca la simulación y observa cómo las tolvas que llegan antes
+      esperan en la barrera.</p>
+      <div id="lab" class="lab-shell"></div>
+      <p class="lab-note">Consejo: el indicador «tolvas en la barrera» muestra cuántas esperan a la última.</p>
+
       <h2>Barrera simple (un solo uso)</h2>
       <pre data-lang="cpp" data-file="barrera.cpp"><code>Semaforo sLlegada(0);      // señales de llegada
 Semaforo sApertura(0);     // permiso para continuar
@@ -99,5 +106,7 @@ void esperaGrupo() {
     <aside id="toc"></aside>
   </main>
   <script src="../js/app.js"></script>
+  <script src="../js/motor.js"></script>
+  <script src="../js/mini-barrera.js"></script>
 </body>
 </html>
