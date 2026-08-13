@@ -145,7 +145,6 @@ class Motor {
         if (q.items.length < q.cap) {
           q.items.push(Object.assign({}, c.item, { readyAt: this.t + q.delay }));
           q.totalIn++;
-          q.totalIn++;
           this.log(`${th.name}: push en ${c.q} (${q.items.length}/${q.cap})`, "ev-item");
           this._wakePopWaiter(q);
           if (c.fx) c.fx();
@@ -205,8 +204,9 @@ class Motor {
     this.t++;
     let acted = false;
 
+    const base = this.cursor;
     for (let k = 0; k < this.threads.length; k++) {
-      const i = (this.cursor + k) % this.threads.length;
+      const i = (base + k) % this.threads.length;
       const th = this.threads[i];
       if (th.state === "done") continue;
       if (th.state === "blocked") continue;

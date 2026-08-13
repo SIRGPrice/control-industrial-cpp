@@ -49,17 +49,26 @@ const LW_MANT = `void hMantenimiento() {                // escritor
     LW_CODE["hAGV" + i] = LW_AGV;
     m.hilo("hAGV" + i, "#155dfc", function* (m, th, idx = i) {
       const p = P(m, th);
+      let primero = false, ultimo = false;
       while (true) {
         yield p.work("Avanzando hasta la zona", 2, 3 + Math.floor(Math.random() * 4));
-        yield p.wait("sMutex", 3, () => { S.nLec++; });
-        if (S.nLec === 1) yield p.wait("sCarril", 4);
+        primero = false;
+        yield p.wait("sMutex", 3, () => {
+          S.nLec++;
+          primero = S.nLec === 1;
+        });
+        if (primero) yield p.wait("sCarril", 4);
         yield p.signal("sMutex", 5);
         const dur = 4 + Math.floor(Math.random() * 3);
         yield p.work("Recorriendo el carril", 6, dur,
           () => { S.agv[idx - 1] = { dur }; },
           () => { S.agv[idx - 1] = null; S.stats.recorridos++; });
-        yield p.wait("sMutex", 7, () => { S.nLec--; });
-        if (S.nLec === 0) yield p.signal("sCarril", 8);
+        ultimo = false;
+        yield p.wait("sMutex", 7, () => {
+          S.nLec--;
+          ultimo = S.nLec === 0;
+        });
+        if (ultimo) yield p.signal("sCarril", 8);
         yield p.signal("sMutex", 9);
         yield p.work("Saliendo de la zona", 10, 2 + Math.floor(Math.random() * 2));
       }

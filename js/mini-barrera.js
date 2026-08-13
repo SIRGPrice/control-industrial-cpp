@@ -42,19 +42,28 @@ const BARR_CODE = `void hTolva(int n) {                  // una por tolva
   for (let i = 0; i < 3; i++) {
     m.hilo("hTolva" + (i + 1), "#e5484d", function* (m, th, idx = i) {
       const p = P(m, th);
+      let tercero = false;
       while (true) {
         const dur = 4 + Math.floor(Math.random() * 4);
         yield p.work("Llenando tolva", 3, dur,
           () => { S.llenando[idx] = true; S.dur[idx] = dur; },
           () => { S.llenando[idx] = false; });
-        yield p.wait("sMutex", 4, () => { S.nListas++; });
-        if (S.nListas === 3) {
-          S.nListas = 0;
-          S.abierta = true;
+        tercero = false;
+        yield p.wait("sMutex", 4, () => {
+          S.nListas++;
+          if (S.nListas === 3) {
+            S.nListas = 0;
+            S.abierta = true;
+            tercero = true;
+            const b = m.sems.get("sBarrera");
+            for (let k = 0; k < 3; k++) {
+              if (!m._wakeSemWaiter(b)) b.value++;
+            }
+            m.log(`hTolva${idx + 1} es la 3ª llegada · abre la compuerta`, "ev-warn");
+          }
+        });
+        if (tercero) {
           yield p.signal("sMutex", 8);
-          yield p.signal("sBarrera", 9);
-          yield p.signal("sBarrera", 10);
-          yield p.signal("sBarrera", 11);
         } else {
           yield p.signal("sMutex", 13);
           yield p.wait("sBarrera", 14);
