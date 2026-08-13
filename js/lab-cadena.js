@@ -58,7 +58,7 @@ const CADENA_CODE = {
   const S = { serial: 0, stats: { inyectadas: 0, terminadas: 0, tel: { M1: 0, M2: 0, M3: 0 } } };
   m.extra.S = S;
 
-  m.cola("cola1", 2, 1).cola("cola2", 2, 1).cola("cola3", 2, 1).cola("colaSalida", 3, 2).cola("colaTel", 4);
+  m.cola("cola1", 2, 1).cola("cola2", 2, 1).cola("cola3", 2, 1).cola("colaSalida", 3, 3).cola("colaTel", 4);
 
   m.hilo("hAlimentador", "#8b5cf6", function* (m, th) {
     const p = P(m, th);
@@ -99,9 +99,10 @@ const CADENA_CODE = {
   });
 
   const PLANT = `
-  <svg class="plant" viewBox="0 0 720 290">
+  <svg class="plant" viewBox="0 0 800 300">
     <text x="36" y="42" text-anchor="middle" font-size="11" font-weight="700" fill="var(--text-3)">TOLVA</text>
     <path d="M14 50 h44 l-8 34 h-28 Z" fill="var(--bg-soft)" stroke="var(--border-strong)" stroke-width="2"/>
+    <g id="cintas"></g>
     <g id="qzones"></g>
     <g id="maquinas"></g>
     <g id="salida"></g>
@@ -141,24 +142,37 @@ const CADENA_CODE = {
     if (!built) { body.innerHTML = PLANT; built = true; }
     const Q = (n) => m.queues.get(n);
 
+    let ch = "";
+    const BELTS = [
+      { x1: 58, x2: 80 },
+      { x1: 242, x2: 252 },
+      { x1: 412, x2: 422 },
+      { x1: 582, x2: 592 },
+      { x1: 678, x2: 690 },
+    ];
+    BELTS.forEach((b) => {
+      ch += `<line x1="${b.x1}" y1="93" x2="${b.x2}" y2="93" stroke="var(--border-strong)" stroke-width="2.5" stroke-dasharray="6 4"/>`;
+    });
+    body.querySelector("#cintas").innerHTML = ch;
+
     body.querySelector("#qzones").innerHTML =
-      slotsCola(78, Q("cola1"), "cola1") +
-      slotsCola(238, Q("cola2"), "cola2") +
-      slotsCola(398, Q("cola3"), "cola3") +
-      slotsCola(556, Q("colaSalida"), "colaSalida");
+      slotsCola(80, Q("cola1"), "cola1") +
+      slotsCola(252, Q("cola2"), "cola2") +
+      slotsCola(422, Q("cola3"), "cola3") +
+      slotsCola(592, Q("colaSalida"), "colaSalida");
 
     body.querySelector("#maquinas").innerHTML =
-      cajaMaquina(140, "M1", estadoDe(m, "hMaquina1"), "#e5484d") +
-      cajaMaquina(300, "M2", estadoDe(m, "hMaquina2"), "#f76b15") +
-      cajaMaquina(460, "M3", estadoDe(m, "hMaquina3"), "#3b82f6");
+      cajaMaquina(150, "M1", estadoDe(m, "hMaquina1"), "#e5484d") +
+      cajaMaquina(320, "M2", estadoDe(m, "hMaquina2"), "#f76b15") +
+      cajaMaquina(490, "M3", estadoDe(m, "hMaquina3"), "#3b82f6");
 
     const eSalida = estadoDe(m, "hSalida");
     body.querySelector("#salida").innerHTML = `
-      <text x="668" y="42" text-anchor="middle" font-size="11" font-weight="700" fill="var(--text-3)">SALIDA</text>
-      <rect x="622" y="56" width="92" height="78" rx="10" fill="var(--bg-soft)" stroke="var(--border-strong)" stroke-width="2"/>
-      <circle cx="668" cy="56" r="7" fill="${eSalida === "work" ? "#22c55e" : "#8b93a7"}" stroke="var(--bg)" stroke-width="2"/>
-      <text x="668" y="94" text-anchor="middle" font-size="12.5" font-weight="700" fill="#46a758">EMBALADO</text>
-      <text x="668" y="112" text-anchor="middle" font-size="16" font-weight="700" fill="var(--text)">${S.stats.terminadas}</text>`;
+      <text x="736" y="42" text-anchor="middle" font-size="11" font-weight="700" fill="var(--text-3)">SALIDA</text>
+      <rect x="690" y="56" width="92" height="78" rx="10" fill="var(--bg-soft)" stroke="var(--border-strong)" stroke-width="2"/>
+      <circle cx="736" cy="56" r="7" fill="${eSalida === "work" ? "#22c55e" : "#8b93a7"}" stroke="var(--bg)" stroke-width="2"/>
+      <text x="736" y="94" text-anchor="middle" font-size="12.5" font-weight="700" fill="#46a758">EMBALADO</text>
+      <text x="736" y="112" text-anchor="middle" font-size="16" font-weight="700" fill="var(--text)">${S.stats.terminadas}</text>`;
 
     const tel = Q("colaTel");
     const eSup = estadoDe(m, "hSupervisor");
@@ -170,7 +184,7 @@ const CADENA_CODE = {
         ${it ? `<text x="${306 + i * 30 + 13}" y="228" text-anchor="middle" font-size="9.5" font-weight="700" fill="#12a594">${it.txt}</text>` : ""}`;
     }
     body.querySelector("#super").innerHTML = `
-      <path d="M346 134 v70" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="4 4" fill="none"/>
+      <path d="M366 134 v70" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="4 4" fill="none"/>
       <text x="290" y="204" text-anchor="middle" font-size="10" fill="var(--text-3)">colaTel</text>
       ${telSlots}
       <rect x="256" y="246" width="180" height="36" rx="9" fill="var(--bg-soft)" stroke="${eSup === "work" ? "#12a594" : "var(--border-strong)"}" stroke-width="2"/>
