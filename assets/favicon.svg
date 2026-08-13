@@ -1,23 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" aria-hidden="true">
-  <defs>
-    <linearGradient id="ll-grad" x1="9" y1="4" x2="40" y2="44" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#4B72FE"/>
-      <stop offset=".5" stop-color="#9B7CF8"/>
-      <stop offset=".75" stop-color="#F28BF3"/>
-      <stop offset="1" stop-color="#FF8958"/>
-    </linearGradient>
-  </defs>
-  <g transform="rotate(-22 15.5 13)">
-    <rect x="13" y="2" width="5" height="15" rx="2.5" fill="url(#ll-grad)"/>
-  </g>
-  <g transform="rotate(22 32.5 13)">
-    <rect x="30" y="2" width="5" height="15" rx="2.5" fill="url(#ll-grad)"/>
-  </g>
-  <circle cx="24" cy="24" r="13.5" fill="url(#ll-grad)"/>
-  <path d="M18.5 30.5c0-4.2 4.7-6 5.5-6s5.5 1.8 5.5 6c0 4.9-2.2 7.5-5.5 7.5s-5.5-2.6-5.5-7.5Z" fill="#F5F5F5"/>
-  <circle cx="18.8" cy="21.5" r="1.9" fill="#101014"/>
-  <circle cx="29.2" cy="21.5" r="1.9" fill="#101014"/>
-  <circle cx="21.3" cy="29.5" r="1" fill="#8a8a8f"/>
-  <circle cx="26.7" cy="29.5" r="1" fill="#8a8a8f"/>
-  <path d="M22.4 34.2c1 .9 2.2.9 3.2 0" stroke="#8a8a8f" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+  <rect x="13" y="3" width="22" height="42" rx="7" fill="#3E18F9"/>
+  <rect x="16" y="6" width="16" height="36" rx="5" fill="#1a0d5e"/>
+  <circle cx="24" cy="15" r="6" fill="#ff337a"/>
+  <circle cx="24" cy="28" r="6" fill="#ffbe33"/>
+  <circle cx="24" cy="41" r="6" fill="#10b981"/>
+  <path d="M19 8.5l10 0" stroke="rgba(255,255,255,.35)" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M19 21.5l10 0" stroke="rgba(255,255,255,.35)" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M19 34.5l10 0" stroke="rgba(255,255,255,.35)" stroke-width="1.4" stroke-linecap="round"/>
 </svg>

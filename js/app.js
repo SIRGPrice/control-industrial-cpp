@@ -90,7 +90,6 @@ const SITE = {
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
       </button>
       <a class="brand" href="${BASE}index.html">
-        <img class="brand-logo" src="${BASE}assets/llama.svg" alt="">
         <span>${SITE.name}<small> · ${SITE.sub}</small></span>
       </a>
       <div id="searchbox">

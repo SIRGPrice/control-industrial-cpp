@@ -56,9 +56,11 @@ class Motor {
 
   _wakeSemWaiter(sem) {
     if (sem.waiters.length) {
-      const th = this.threads[sem.waiters.shift()];
+      const w = sem.waiters.shift();
+      const th = this.threads[w.id];
       th.state = "ready";
       th.blockOn = null;
+      if (w.fx) w.fx();
       this.log(`${th.name} desbloqueado en wait(${sem.name})`, "ev-wake");
       return true;
     }
@@ -67,10 +69,12 @@ class Motor {
 
   _wakePopWaiter(q) {
     if (q.popWaiters.length && q.items.length) {
-      const th = this.threads[q.popWaiters.shift()];
+      const w = q.popWaiters.shift();
+      const th = this.threads[w.id];
       th.resumeValue = q.items.shift();
       th.state = "ready";
       th.blockOn = null;
+      if (w.fx) w.fx();
       this.log(`${th.name} desbloqueado: la cola ${q.name} ya tiene datos`, "ev-wake");
     }
   }
@@ -84,6 +88,7 @@ class Motor {
       th.resumeValue = true;
       th.state = "ready";
       th.blockOn = null;
+      if (w.fx) w.fx();
       this.log(`${th.name} desbloqueado: hay hueco en la cola ${q.name} (push completado)`, "ev-wake");
     }
   }
@@ -113,10 +118,9 @@ class Motor {
 
       case "signal": {
         const s = this.sems.get(c.sem);
-        if (!this._wakeSemWaiter(s)) {
-          s.value++;
-        }
-        this.log(`${th.name}: signal(${c.sem}) → ${s.waiters.length ? "despierta a un hilo" : "valor=" + s.value}`, "");
+        const woke = this._wakeSemWaiter(s);
+        if (!woke) s.value++;
+        this.log(`${th.name}: signal(${c.sem}) → ${woke ? "despierta a un hilo" : "valor=" + s.value}`, "");
         if (c.fx) c.fx();
         return;
       }
@@ -129,7 +133,7 @@ class Motor {
           if (c.fx) c.fx();
           return;
         }
-        s.waiters.push(th.id);
+        s.waiters.push({ id: th.id, fx: c.fx });
         th.state = "blocked";
         th.blockOn = `wait(${c.sem})`;
         this.log(`${th.name} BLOQUEADO en wait(${c.sem}) (valor 0)`, "ev-block");
@@ -146,7 +150,7 @@ class Motor {
           if (c.fx) c.fx();
           return;
         }
-        q.pushWaiters.push({ id: th.id, item: c.item });
+        q.pushWaiters.push({ id: th.id, item: c.item, fx: c.fx });
         th.state = "blocked";
         th.blockOn = `push(${c.q}) llena`;
         this.log(`${th.name} BLOQUEADO: la cola ${c.q} está llena (${q.cap}/${q.cap})`, "ev-block");
@@ -163,7 +167,7 @@ class Motor {
           if (c.fx) c.fx();
           return;
         }
-        q.popWaiters.push(th.id);
+        q.popWaiters.push({ id: th.id, fx: c.fx });
         th.state = "blocked";
         th.blockOn = `pop(${c.q}) vacía`;
         this.log(`${th.name} BLOQUEADO: la cola ${c.q} está vacía`, "ev-block");
@@ -384,10 +388,7 @@ class LabUI {
       const th = v.th;
       v.lineEls.forEach((el) => el.classList.remove("hl"));
       const target = v.lineEls.find((el) => +el.dataset.n === th.line);
-      if (target) {
-        target.classList.add("hl");
-        if (target.scrollIntoView) target.scrollIntoView({ block: "nearest" });
-      }
+      if (target) target.classList.add("hl");
       const st = v.stateEl;
       if (th.state === "done") { st.textContent = "fin"; st.className = "tc-state done"; }
       else if (th.state === "blocked") { st.textContent = th.blockOn; st.className = "tc-state blocked"; }

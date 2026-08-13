@@ -94,7 +94,6 @@ a { color: var(--link); text-decoration: none; }
 }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--text); white-space: nowrap; }
 .brand:hover { text-decoration: none; }
-.brand .brand-logo { width: 27px; height: 27px; flex: none; }
 .brand > span { font-size: 15.5px; font-weight: 600; letter-spacing: -.01em; }
 .brand small { font-weight: 500; color: var(--text-3); font-size: 12.5px; margin-left: 4px; }
 
@@ -335,7 +334,6 @@ details.doc-box[open] { padding-bottom: 12px; }
 
 /* ---------- Página de inicio ---------- */
 .hero { padding: 48px 0 20px; }
-.hero .hero-llama { width: 72px; height: 72px; margin-bottom: 20px; }
 .hero h1 { font-size: 42px; line-height: 1.1; letter-spacing: -.03em; font-weight: 700; margin-bottom: 16px; }
 .hero h1 .accent { color: var(--accent); }
 .hero .lead { max-width: 660px; font-size: 17.5px; }
