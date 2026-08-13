@@ -70,8 +70,8 @@ const BARR_CODE = `void hTolva(int n) {                  // una por tolva
   <svg class="plant" viewBox="0 0 560 280">
     <g id="silos"></g>
     <rect id="canal" x="60" y="190" width="440" height="30" rx="8" fill="var(--bg-code)" stroke="var(--border-strong)" stroke-width="1.5"/>
-    <text id="valveLabel" x="280" y="212" text-anchor="middle" font-size="11" font-weight="700" fill="var(--text-3)">compuerta cerrada</text>
     <rect id="valve" x="262" y="190" width="36" height="30" fill="var(--border-strong)"/>
+    <text id="valveLabel" x="280" y="236" text-anchor="middle" font-size="11" font-weight="700" fill="var(--text-3)">compuerta cerrada</text>
     <text id="stateLabel" x="280" y="262" text-anchor="middle" font-size="13" font-weight="700" fill="var(--text)">esperando tolvas…</text>
   </svg>`;
 

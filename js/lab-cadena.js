@@ -58,7 +58,7 @@ const CADENA_CODE = {
   const S = { serial: 0, stats: { inyectadas: 0, terminadas: 0, tel: { M1: 0, M2: 0, M3: 0 } } };
   m.extra.S = S;
 
-  m.cola("cola1", 2).cola("cola2", 2).cola("cola3", 2).cola("colaSalida", 3).cola("colaTel", 4);
+  m.cola("cola1", 2, 1).cola("cola2", 2, 1).cola("cola3", 2, 1).cola("colaSalida", 3, 2).cola("colaTel", 4);
 
   m.hilo("hAlimentador", "#8b5cf6", function* (m, th) {
     const p = P(m, th);
