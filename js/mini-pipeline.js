@@ -41,7 +41,7 @@ const PIPE_CODE = {
   };
   m.extra.S = S;
 
-  m.cola("cola1", 2).cola("cola2", 2).cola("colaSalida", 3);
+  m.cola("cola1", 2, 1).cola("cola2", 2, 1).cola("colaSalida", 3, 2);
 
   m.hilo("hEtapa1", "#e5484d", function* (m, th) {
     const p = P(m, th);

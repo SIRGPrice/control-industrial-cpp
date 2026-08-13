@@ -25,8 +25,8 @@ class Motor {
     return this;
   }
 
-  cola(name, cap) {
-    this.queues.set(name, { name, cap, items: [], pushWaiters: [], popWaiters: [], totalIn: 0 });
+  cola(name, cap, delay = 0) {
+    this.queues.set(name, { name, cap, delay, items: [], pushWaiters: [], popWaiters: [], travelWaiters: [], totalIn: 0 });
     return this;
   }
 
@@ -68,7 +68,7 @@ class Motor {
   }
 
   _wakePopWaiter(q) {
-    if (q.popWaiters.length && q.items.length) {
+    if (q.popWaiters.length && q.items.length && q.items[0].readyAt <= this.t) {
       const w = q.popWaiters.shift();
       const th = this.threads[w.id];
       th.resumeValue = q.items.shift();
@@ -83,7 +83,7 @@ class Motor {
     if (q.pushWaiters.length) {
       const w = q.pushWaiters.shift();
       const th = this.threads[w.id];
-      q.items.push(w.item);
+      q.items.push(Object.assign({}, w.item, { readyAt: this.t + q.delay }));
       q.totalIn++;
       th.resumeValue = true;
       th.state = "ready";
@@ -143,7 +143,8 @@ class Motor {
       case "qpush": {
         const q = this.queues.get(c.q);
         if (q.items.length < q.cap) {
-          q.items.push(c.item);
+          q.items.push(Object.assign({}, c.item, { readyAt: this.t + q.delay }));
+          q.totalIn++;
           q.totalIn++;
           this.log(`${th.name}: push en ${c.q} (${q.items.length}/${q.cap})`, "ev-item");
           this._wakePopWaiter(q);
@@ -159,12 +160,20 @@ class Motor {
 
       case "qpop": {
         const q = this.queues.get(c.q);
-        if (q.items.length > 0) {
+        const front = q.items[0];
+        if (front && front.readyAt <= this.t) {
           const item = q.items.shift();
           th.resumeValue = item;
           this.log(`${th.name}: pop de ${c.q} (${q.items.length}/${q.cap})`, "ev-item");
           this._wakePushWaiter(q);
           if (c.fx) c.fx();
+          return;
+        }
+        if (q.items.length) {
+          q.travelWaiters.push({ id: th.id, fx: c.fx });
+          th.state = "blocked";
+          th.blockOn = `pop(${c.q}) pieza en cinta`;
+          this.log(`${th.name} BLOQUEADO: la pieza de ${c.q} aún está en la cinta`, "ev-block");
           return;
         }
         q.popWaiters.push({ id: th.id, fx: c.fx });
@@ -214,6 +223,19 @@ class Motor {
       this._runOne(th);
     }
 
+    // Piezas en cinta que ya han llegado a destino: despierta a quien las espera
+    for (const q of this.queues.values()) {
+      while (q.items.length && q.items[0].readyAt <= this.t && (q.popWaiters.length || q.travelWaiters.length)) {
+        const w = (q.popWaiters.length ? q.popWaiters : q.travelWaiters).shift();
+        const th = this.threads[w.id];
+        th.resumeValue = q.items.shift();
+        th.state = "ready";
+        th.blockOn = null;
+        if (w.fx) w.fx();
+        this.log(`${th.name} desbloqueado: pieza lista en ${q.name}`, "ev-wake");
+      }
+    }
+
     // Detección de interbloqueo: todos los hilos vivos, bloqueados
     const vivos = this.threads.filter((t) => t.state !== "done");
     if (vivos.length && vivos.every((t) => t.state === "blocked")) {
@@ -227,7 +249,7 @@ class Motor {
 
   reset() {
     for (const s of this.sems.values()) { s.value = s.init; s.waiters = []; }
-    for (const q of this.queues.values()) { q.items = []; q.pushWaiters = []; q.popWaiters = []; q.totalIn = 0; }
+    for (const q of this.queues.values()) { q.items = []; q.pushWaiters = []; q.popWaiters = []; q.travelWaiters = []; q.totalIn = 0; }
     for (const th of this.threads) {
       th.gen = th.factory(this, th);
       th.state = "ready"; th.blockOn = null; th.line = 0; th.label = "";
