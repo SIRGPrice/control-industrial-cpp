@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Semáforos: teoría y API · C++ Concurrente</title>
+  <meta name="description" content="El semáforo de Dijkstra aplicado a control industrial: semántica de wait/signal, counting_semaphore y binary_semaphore de C++20, y una implementación propia.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="semaforos">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Semáforos</p>
+      <h1>Semáforos: teoría y API</h1>
+      <p class="lead">El semáforo, propuesto por Dijkstra en 1965, sigue siendo la herramienta mental más útil para
+      coordinar una planta: un contador entero sobre el que solo se puede <em>wait</em> (restar, bloqueándose si
+      vale 0) y <em>signal</em> (sumar, despertando a quien esperaba). Todo lo demás —colas, barreras, pipelines—
+      se construye con ellos.</p>
+
+      <h2>Las dos operaciones</h2>
+      <table>
+        <tr><th>Operación</th><th>También llamada</th><th>Qué hace</th></tr>
+        <tr><td><code>wait(s)</code></td><td>P, acquire, down</td><td>Si <code>s &gt; 0</code>, lo decrementa y sigue. Si vale 0, <strong>bloquea</strong> al hilo hasta que otro haga signal.</td></tr>
+        <tr><td><code>signal(s)</code></td><td>V, release, up</td><td>Si hay hilos esperando, despierta a uno. Si no, incrementa el valor.</td></tr>
+      </table>
+      <p>El valor del semáforo tiene lectura física: <strong>cuántos permisos quedan</strong>. Un semáforo vale 1 =
+      «el recurso está libre» (mutex). Vale N = «hay N huecos / N máquinas libres». Vale 0 = «aún no ha ocurrido
+      el evento» (señal).</p>
+
+      <h2>Tipos de semáforo</h2>
+      <ul>
+        <li><strong>Binario</strong> (0 ó 1): como señal de evento o como mutex. En el cuaderno SCTR, <code>bsem</code>.</li>
+        <li><strong>Contador</strong> (0…N): recursos con varias unidades, buffers con capacidad.</li>
+      </ul>
+      <div class="callout note">
+        <div class="co-title">📘 El ejercicio ej58</div>
+        <p>El primer ejercicio de multitarea del cuaderno pide construir un semáforo contador a partir de
+        semáforos binarios (uno de acceso y uno de bloqueo, con contador de bloqueados). Más abajo está su
+        equivalente C++ moderno.</p>
+      </div>
+
+      <h2>API en C++20: &lt;semaphore&gt;</h2>
+      <pre data-lang="cpp" data-file="api_semaforo.cpp"><code>#include &lt;semaphore&gt;
+
+std::counting_semaphore&lt;5&gt; huecos(5);   // semáforo contador, máx. 5, empieza en 5
+std::binary_semaphore listo(0);         // semáforo binario, empieza en 0
+
+huecos.acquire();          // wait: bloquea si vale 0
+huecos.release();          // signal
+if (huecos.try_acquire())  // wait sin bloqueo: devuelve bool
+    { /* había permiso */ }
+// variantes temporizadas:
+huecos.try_acquire_for(std::chrono::seconds(2));
+huecos.try_acquire_until(reloj::now() + std::chrono::seconds(2));</code></pre>
+      <table>
+        <tr><th>Clásico</th><th>C++20</th></tr>
+        <tr><td><code>init(s, N)</code></td><td>Constructor: <code>counting_semaphore&lt;Max&gt; s(N)</code></td></tr>
+        <tr><td><code>wait(s)</code></td><td><code>s.acquire()</code></td></tr>
+        <tr><td><code>signal(s)</code></td><td><code>s.release()</code></td></tr>
+        <tr><td>—</td><td><code>s.try_acquire()</code>, <code>try_acquire_for(d)</code>, <code>try_acquire_until(t)</code></td></tr>
+      </table>
+
+      <h2>Implementación propia (pre-C++20 o empotrados)</h2>
+      <p>Con mutex + variable de condición se obtiene el semáforo clásico. Es la versión moderna del ej58:</p>
+      <pre data-lang="cpp" data-file="semaforo.hpp"><code>#include &lt;mutex&gt;
+#include &lt;condition_variable&gt;
+
+class Semaforo {
+    int valor;
+    std::mutex m;
+    std::condition_variable cv;
+public:
+    explicit Semaforo(int v) : valor(v) {}
+
+    void wait() {                          // P
+        std::unique_lock&lt;std::mutex&gt; lk(m);
+        cv.wait(lk, [&amp;] { return valor &gt; 0; });
+        --valor;
+    }
+
+    void signal() {                        // V
+        std::lock_guard&lt;std::mutex&gt; lk(m);
+        ++valor;
+        cv.notify_one();
+    }
+
+    bool try_wait() {                      // P sin bloqueo
+        std::lock_guard&lt;std::mutex&gt; lk(m);
+        if (valor &gt; 0) { --valor; return true; }
+        return false;
+    }
+};</code></pre>
+
+      <h2>Los cuatro usos industriales</h2>
+      <table>
+        <tr><th>Uso</th><th>Valor inicial</th><th>Ejemplo de planta</th></tr>
+        <tr><td><strong>Exclusión mutua</strong></td><td>1</td><td><code>sRobot</code>: el robot de la célula solo lo usa un hilo cada vez.</td></tr>
+        <tr><td><strong>Señalización</strong> (evento)</td><td>0</td><td><code>scEntradaPrensa</code>: «hay pieza en la prensa».</td></tr>
+        <tr><td><strong>Conteo de recursos</strong></td><td>N</td><td><code>sOperario = 10</code>: diez máquinas disponibles para el operario.</td></tr>
+        <tr><td><strong>Orden</strong></td><td>0</td><td>Un hilo no arranca hasta que otro hace <code>signal</code>.</td></tr>
+      </table>
+
+      <h2>El convenio de nombres sp / sc</h2>
+      <p>En el estilo de los ejercicios, cada relación productor–consumidor usa una pareja de semáforos:</p>
+      <ul>
+        <li><code>sp*</code> — semáforo del <strong>productor</strong>: cuenta los <em>huecos</em> disponibles (inicializado a la capacidad).</li>
+        <li><code>sc*</code> — semáforo del <strong>consumidor</strong>: cuenta los <em>elementos</em> disponibles (inicializado a 0).</li>
+      </ul>
+      <p>Por ejemplo, entre la prensa y el CNC: <code>spPrensaCNC = 1</code> (el CNC admite una pieza) y
+      <code>scPrensaCNC = 0</code> (de momento no hay ninguna). El productor hace
+      <code>wait(sp…)</code> antes de dejar la pieza y <code>signal(sc…)</code> después; el consumidor hace justo lo
+      inverso. Lo verás funcionando en el <a href="../labs/fms.html">laboratorio FMS</a> y se desarrolla en
+      <a href="semaforos-patrones.html">Patrones con semáforos</a>.</p>
+
+      <div class="callout tip">
+        <div class="co-title">💡 Cómo leer un semáforo</div>
+        <p>Ante cualquier semáforo pregúntate: <em>¿qué permiso representa una unidad?</em> Si la respuesta es
+        «hueco», el productor lo espera; si es «elemento», lo espera el consumidor; si es «recurso», lo esperan
+        todos los que lo usan. Con eso, los wait/signal se colocan casi solos.</p>
+      </div>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

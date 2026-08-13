@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laboratorio · Línea de mecanizado con colas · C++ Concurrente</title>
+  <meta name="description" content="Simulador interactivo de una línea de mecanizado por paso de mensajes: seis hilos conectados por colas bloqueantes, con backpressure y supervisor de telemetría.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="lab-colas">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Laboratorio 3 · Paso de mensajes</p>
+      <h1>Línea de mecanizado con colas</h1>
+      <p class="lead">Tres máquinas en cadena conectadas por <strong>colas bloqueantes</strong>: una tolva inyecta
+      piezas, cada máquina consume de su cola de entrada y entrega a la de salida, un embalador recoge las piezas
+      terminadas y un <strong>supervisor</strong> recibe telemetría de todas. M2 es más lenta: verás nacer el
+      cuello de botella y propagarse la presión hacia atrás (backpressure).</p>
+
+      <h2>Qué observar</h2>
+      <ul>
+        <li>La cola <code>cola2</code> (entrada de M2) se llena y <code>hMaquina1</code> queda <strong>bloqueado en
+        <code>cola2.push</code></strong>: la presión sube aguas arriba.</li>
+        <li>Cuando <code>cola1</code> también se llena, se bloquea hasta la propia tolva
+        (<code>hAlimentador</code>): la línea se autorregula sola.</li>
+        <li>El supervisor consume la <code>colaTel</code> sin ralentizar a nadie: lectura de datos sin compartir variables.</li>
+        <li>Los KPI <em>piezas en el sistema</em> y <em>producción por tick</em> miden el rendimiento de la línea.</li>
+      </ul>
+
+      <div id="lab" class="lab-shell"></div>
+
+      <h2>Qué cola produce qué efecto</h2>
+      <table class="line-map">
+        <tr><th>Línea</th><th>Efecto en la planta</th></tr>
+        <tr><td>hAlimentador:4 cola1.push(p)</td><td>Una pieza con nº de serie entra en el sistema.</td></tr>
+        <tr><td>hMaquina1:3 cola1.pop()</td><td>La máquina M1 recoge la pieza; se ilumina su lámpara.</td></tr>
+        <tr><td>hMaquina1:5 cola2.push(p)</td><td>Si cola2 está llena, M1 se bloquea: la presión sube a cola1.</td></tr>
+        <tr><td>hMaquina2:4 mecaniza(p)</td><td>M2 trabaja lentamente: es el cuello de botella.</td></tr>
+        <tr><td>hMaquina2:6 colaTel.push(...)</td><td>El mensaje viaja a la zona del supervisor.</td></tr>
+        <tr><td>hSalida:3 colaSalida.pop()</td><td>El contador de terminadas sube.</td></tr>
+        <tr><td>hSupervisor:3 colaTel.pop()</td><td>Los contadores M1/M2/M3 del supervisor se actualizan.</td></tr>
+      </table>
+
+      <h2>Colas y capacidades</h2>
+      <table>
+        <tr><th>Cola</th><th>Capacidad</th><th>Productor</th><th>Consumidor</th></tr>
+        <tr><td><code>cola1</code></td><td>2</td><td>hAlimentador</td><td>hMaquina1</td></tr>
+        <tr><td><code>cola2</code></td><td>2</td><td>hMaquina1</td><td>hMaquina2</td></tr>
+        <tr><td><code>cola3</code></td><td>2</td><td>hMaquina2</td><td>hMaquina3</td></tr>
+        <tr><td><code>colaSalida</code></td><td>3</td><td>hMaquina3</td><td>hSalida</td></tr>
+        <tr><td><code>colaTel</code></td><td>4</td><td>M1, M2, M3</td><td>hSupervisor</td></tr>
+      </table>
+
+      <h2>Código C++20 equivalente</h2>
+      <pre data-lang="cpp" data-file="linea_colas.cpp"><code>#include &lt;jthread&gt;
+
+ColaBloqueante&lt;Pieza&gt; cola1(2), cola2(2), cola3(2), colaSalida(3);
+ColaBloqueante&lt;Msg&gt;   colaTel(4);
+
+struct Msg { int origen; uint32_t serie; };
+
+void hAlimentador() {
+    while (true) {
+        Pieza p = nuevaPieza();
+        cola1.push(p);                  // se bloquea si cola1 está llena
+    }
+}
+
+void hMaquina(int n, std::stop_token st,
+              ColaBloqueante&lt;Pieza&gt;&amp; entrada,
+              ColaBloqueante&lt;Pieza&gt;&amp; salida) {
+    while (!st.stop_requested()) {
+        Pieza p = entrada.pop();        // se bloquea si está vacía
+        mecaniza(p, n);
+        salida.push(p);                 // se bloquea si está llena
+        colaTel.push({n, p.serie});
+    }
+}
+
+void hSalida() {
+    while (true) {
+        Pieza p = colaSalida.pop();
+        embalar(p);
+    }
+}
+
+void hSupervisor() {
+    while (true) {
+        Msg msg = colaTel.pop();
+        registrar(msg);
+    }
+}
+
+int main() {
+    std::jthread alimentador(hAlimentador);
+    std::jthread m1(hMaquina, 1, cola1, cola2);
+    std::jthread m2(hMaquina, 2, cola2, cola3);
+    std::jthread m3(hMaquina, 3, cola3, colaSalida);
+    std::jthread salida(hSalida), sup(hSupervisor);
+}</code></pre>
+      <p>Nota: <code>std::jthread</code> no admite parámetros por referencia en <code>hMaquina</code> sin
+      <code>std::ref</code>; en código real habría que escribirlo o pasar índices que resuelvan las colas.</p>
+
+      <h2>Experimentos propuestos</h2>
+      <ol>
+        <li>Mantén la línea en marcha hasta que la producción por tick se estabilice: ¿cuántas piezas por tick
+        produce? Cambia mentalmente la velocidad de M2 por la de M1: ¿cambia el resultado?</li>
+        <li>Observa el orden de bloqueo en el registro: cuando la línea está saturada, ¿qué hilo se bloquea
+        primero y cuál por último? (Pista: el bloqueo empieza en el cuello de botella.)</li>
+        <li>Si <code>colaTel</code> fuera de capacidad 1, ¿qué pasaría con M1, M2 y M3? Compara con la respuesta de
+        la página <a href="../docs/colas.html">Colas</a>.</li>
+      </ol>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+  <script src="../js/motor.js"></script>
+  <script src="../js/lab-cadena.js"></script>
+</body>
+</html>

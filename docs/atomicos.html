@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atómicos y sin candados · C++ Concurrente</title>
+  <meta name="description" content="std::atomic para contadores, banderas de parada y señales simples entre hilos de una instalación, sin mutex.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="atomicos">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Fundamentos</p>
+      <h1>Atómicos y sin candados</h1>
+      <p class="lead">Para operaciones sencillas —un contador de piezas, una bandera de parada, un indicador de
+      presencia— un mutex es excesivo. <code>std::atomic</code> ofrece operaciones indivisibles directamente
+      soportadas por el hardware, sin bloquear a nadie.</p>
+
+      <h2>Contadores de planta sin mutex</h2>
+      <pre data-lang="cpp" data-file="contador.cpp"><code>#include &lt;atomic&gt;
+#include &lt;thread&gt;
+
+std::atomic&lt;int&gt; piezasTerminadas{0};    // compartido y seguro
+
+void hLinea(int n) {
+    while (true) {
+        // ... procesar una pieza ...
+        piezasTerminadas++;              // fetch_add atómico: sin carreras
+    }
+}
+
+int main() {
+    std::thread a(hLinea, 1), b(hLinea, 2);
+    // ...
+    std::cout &lt;&lt; "Total: " &lt;&lt; piezasTerminadas.load() &lt;&lt; "\n";
+    a.join(); b.join();
+}</code></pre>
+      <p>Operaciones principales de <code>std::atomic&lt;T&gt;</code>:</p>
+      <table>
+        <tr><th>Operación</th><th>Significado</th></tr>
+        <tr><td><code>a.load()</code></td><td>Lectura atómica.</td></tr>
+        <tr><td><code>a.store(v)</code></td><td>Escritura atómica.</td></tr>
+        <tr><td><code>a++</code> / <code>a += n</code></td><td>Incremento atómico (fetch_add).</td></tr>
+        <tr><td><code>a.exchange(v)</code></td><td>Pone <code>v</code> y devuelve el valor anterior.</td></tr>
+        <tr><td><code>a.compare_exchange_weak(exp, v)</code></td><td>Si vale <code>exp</code>, pone <code>v</code>; si no, carga el valor real en <code>exp</code>. Base de las estructuras lock-free.</td></tr>
+        <tr><td><code>a.wait(v)</code> / <code>a.notify_one()</code> (C++20)</td><td>Bloqueo barato hasta que el valor cambie: ideal para sensores y banderas.</td></tr>
+      </table>
+
+      <h2>Banderas de parada y sensores</h2>
+      <pre data-lang="cpp"><code>std::atomic&lt;bool&gt; paradaEmergencia{false};
+
+void hRobot() {
+    while (!paradaEmergencia.load()) {
+        // ... ciclo de trabajo ...
+    }
+    // salir de forma ordenada
+}
+
+// desde el hilo de seguridad:
+paradaEmergencia.store(true);</code></pre>
+      <p>Y con C++20, esperar un cambio de sensor sin sondear:</p>
+      <pre data-lang="cpp"><code>std::atomic&lt;bool&gt; sensorPresencia{false};
+
+void hCinta() {
+    while (true) {
+        sensorPresencia.wait(false);   // duerme hasta que valga true
+        // ... hay pieza en la posición ...
+        sensorPresencia.wait(true);    // duerme hasta que desaparezca
+    }
+}</code></pre>
+
+      <h2>Cuándo atómico, cuándo mutex</h2>
+      <table>
+        <tr><th>Situación</th><th>Herramienta</th></tr>
+        <tr><td>Un contador que varios hilos incrementan</td><td><code>std::atomic</code></td></tr>
+        <tr><td>Bandera de parada / presencia / permiso</td><td><code>std::atomic&lt;bool&gt;</code></td></tr>
+        <tr><td>Dos o más variables que deben cambiar <em>a la vez</em> (tabla de ocupación + contador)</td><td>Mutex: la atomicidad es del <strong>conjunto</strong></td></tr>
+        <tr><td>Esperar a que un buffer tenga datos</td><td>Cola bloqueante (mutex + condiciones), no sondeo atómico</td></tr>
+      </table>
+
+      <div class="callout warning">
+        <div class="co-title">⚠ Límite de los atómicos</div>
+        <p><code>piezas++</code> atómico no basta si después usas el valor para decidir algo que otro hilo también
+        decide: entre tu lectura y tu acción otro puede cambiarlo. Para secuencias «leer-decidir-escribir» sobre el
+        mismo dato usa <code>compare_exchange</code>, o directamente un mutex.</p>
+      </div>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

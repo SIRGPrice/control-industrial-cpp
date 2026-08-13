@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Colas seguras para hilos · C++ Concurrente</title>
+  <meta name="description" content="Construcción de una cola bloqueante thread-safe en C++ con mutex y dos variables de condición: push y pop que bloquean cuando la cola está llena o vacía.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="colas">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Colas</p>
+      <h1>Colas seguras para hilos</h1>
+      <p class="lead">La cola bloqueante es el componente de software más importante de una instalación
+      concurrente: es el <em>buffer</em> entre estaciones. Los hilos productores depositan mensajes o piezas y se
+      bloquean si la cola está llena; los consumidores retiran y se bloquean si está vacía. Aquí la construimos
+      desde cero.</p>
+
+      <h2>Por qué std::queue no basta</h2>
+      <p><code>std::queue</code> no es thread-safe: si el hilo de la cinta hace <code>push</code> mientras el de la
+      máquina hace <code>pop</code>, hay data race. Y aunque se protegiera con un mutex, faltaría la segunda mitad
+      del problema: <strong>bloquear en vez de sondear</strong>. Queremos que <code>pop()</code> duerma al consumidor
+      hasta que haya datos, y que <code>push()</code> duerma al productor si no hay hueco.</p>
+
+      <h2>La cola bloqueante completa</h2>
+      <pre data-lang="cpp" data-file="cola_bloqueante.hpp"><code>#include &lt;queue&gt;
+#include &lt;mutex&gt;
+#include &lt;condition_variable&gt;
+
+template &lt;typename T&gt;
+class ColaBloqueante {
+    std::queue&lt;T&gt; datos;
+    mutable std::mutex m;
+    std::condition_variable noVacia, noLlena;
+    size_t capacidad;
+
+public:
+    explicit ColaBloqueante(size_t cap) : capacidad(cap) {}
+
+    void push(T item) {                       // productor
+        std::unique_lock&lt;std::mutex&gt; lk(m);
+        noLlena.wait(lk, [&amp;] {                // espera hueco
+            return datos.size() &lt; capacidad;
+        });
+        datos.push(std::move(item));
+        noVacia.notify_one();                 // hay un elemento más
+    }
+
+    T pop() {                                 // consumidor
+        std::unique_lock&lt;std::mutex&gt; lk(m);
+        noVacia.wait(lk, [&amp;] {                // espera elemento
+            return !datos.empty();
+        });
+        T item = std::move(datos.front());
+        datos.pop();
+        noLlena.notify_one();                 // hay un hueco más
+        return item;
+    }
+
+    size_t size() const {
+        std::lock_guard&lt;std::mutex&gt; lk(m);
+        return datos.size();
+    }
+};</code></pre>
+      <p>Observa la simetría con la pareja de semáforos sp/sc: <code>noLlena</code> es el semáforo de huecos y
+      <code>noVacia</code> el de elementos, pero integrados y sin riesgo de olvidar un signal.</p>
+
+      <h2>Anatomía del push</h2>
+      <ol>
+        <li>Se toma el mutex (vía <code>unique_lock</code>): nadie puede tocar la cola mientras decidimos.</li>
+        <li><code>wait</code> con predicado: si está llena, suelta el mutex y duerme; al despertar vuelve a comprobar.</li>
+        <li>Se inserta el elemento (con <code>std::move</code> para evitar copias de mensajes grandes).</li>
+        <li>Se notifica <code>noVacia</code>: si un consumidor dormía esperando datos, despierta.</li>
+        <li>Al salir del ámbito, el mutex se libera solo.</li>
+      </ol>
+
+      <h2>Capacidad: el parámetro de diseño</h2>
+      <ul>
+        <li><strong>Cola ilimitada</strong> (capacidad enorme): el productor nunca se bloquea… y la memoria crece
+        sin control si el consumidor es lento. En planta casi nunca interesa.</li>
+        <li><strong>Cola limitada</strong>: cuando se llena, el productor se bloquea. La presión se propaga hacia
+        atrás por toda la línea (backpressure) y la instalación se autorregula: nadie produce más de lo que se
+        puede consumir. Es la opción por defecto recomendada.</li>
+      </ul>
+      <div class="callout tip">
+        <div class="co-title">💡 Pruébalo</div>
+        <p>En el <a href="../labs/cadena.html">laboratorio de la línea de mecanizado</a>, M2 es más lenta que el
+        resto: verás cómo sus colas de entrada se llenan y cómo los hilos anteriores quedan bloqueados en
+        <code>push</code>, exactamente lo que hace esta clase.</p>
+      </div>
+
+      <h2>Variantes útiles</h2>
+      <h3>pop con timeout (para supervisión)</h3>
+      <pre data-lang="cpp"><code>// devuelve false si pasa el tiempo sin datos; útil para hilos que
+// además de consumir deben vigilar alarmas o la parada
+bool popDurante(T&amp; item, std::chrono::milliseconds t) {
+    std::unique_lock&lt;std::mutex&gt; lk(m);
+    if (!noVacia.wait_for(lk, t, [&amp;] { return !datos.empty(); }))
+        return false;                    // timeout
+    item = std::move(datos.front());
+    datos.pop();
+    noLlena.notify_one();
+    return true;
+}</code></pre>
+      <h3>try_push / try_pop (sin bloqueo)</h3>
+      <p>Versiones que devuelven <code>false</code> inmediatamente si no pueden operar, para hilos que no pueden
+      permitirse quedar bloqueados (p. ej. el hilo de seguridad).</p>
+
+      <h2>Cola bloqueante con semáforos (estilo clásico)</h2>
+      <p>La misma estructura puede expresarse con semáforos explícitos, como en los ejercicios:</p>
+      <pre data-lang="cpp"><code>// sp = semáforo de huecos (valor inicial = capacidad)
+// sc = semáforo de elementos (valor inicial = 0)
+// sM = semáforo mutex (valor inicial = 1)
+
+void push(T item) {
+    sp.wait();            // espera hueco
+    sM.wait();            // región crítica
+    buffer.push(item);
+    sM.signal();
+    sc.signal();          // un elemento más
+}</code></pre>
+      <p>El riesgo de esta versión es hacerlo mal (olvidar el mutex, señalizar en mal orden); por eso en C++
+      moderno se encapsula en una clase como <code>ColaBloqueante</code>.</p>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

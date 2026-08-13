@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hilos con std::thread · C++ Concurrente</title>
+  <meta name="description" content="Crear y gestionar hilos en C++ con std::thread y std::jthread: join, detach, paso de parámetros y el modelo de un hilo por dispositivo.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="hilos">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Fundamentos</p>
+      <h1>Hilos con std::thread</h1>
+      <p class="lead">Un hilo es un flujo de ejecución independiente dentro de un proceso. En una planta industrial,
+      cada dispositivo que debe actuar a la vez (una cinta, una prensa, un robot, un regulador PI) se programa
+      naturalmente como un hilo. Esta página cubre la mecánica básica; la coordinación entre hilos llega con
+      semáforos, mutex y colas.</p>
+
+      <h2>Por qué multihilo en control de instalaciones</h2>
+      <p>Una instalación tiene actividad genuinamente simultánea: la cinta de entrada avanza <em>mientras</em> la
+      prensa estampa <em>mientras</em> el regulador de temperatura muestrea. Codificarlo como una máquina de
+      estados secuencial obliga a intercalar manualmente cada actividad (sondear sensores por turnos), lo que
+      complica el código y desperdicia tiempo de respuesta. Con un hilo por actividad:</p>
+      <ul>
+        <li>Cada dispositivo se programa como si tuviera la CPU para él solo: bucle <code>while (1)</code> con su lógica.</li>
+        <li>Las esperas largas (un sensor, un temporizador, una comunicación) <strong>bloquean solo a su hilo</strong>, no a toda la aplicación.</li>
+        <li>El sistema operativo reparte la CPU; en sistemas de tiempo real, además, puedes fijar prioridades.</li>
+      </ul>
+      <div class="callout note">
+        <div class="co-title">📘 Nota</div>
+        <p>En los ejercicios clásicos de SCTR verás la construcción <code>concurrente { h1(); h2(); … }</code>.
+        Es pseudocódigo que significa «lanza estos hilos a la vez». En C++ real se traduce a varios
+        <code>std::thread</code> o <code>std::jthread</code> lanzados desde <code>main</code>.</p>
+      </div>
+
+      <h2>Tu primer hilo</h2>
+      <pre data-lang="cpp" data-file="hola_hilos.cpp"><code>#include &lt;iostream&gt;
+#include &lt;thread&gt;
+
+void vigilaCinta() {
+    std::cout &lt;&lt; "Hilo de la cinta en marcha\n";
+}
+
+int main() {
+    std::thread t(vigilaCinta);  // lanza el hilo; empieza a ejecutarse YA
+    std::cout &lt;&lt; "Hilo principal\n";
+    t.join();                    // espera a que t termine antes de salir
+}</code></pre>
+      <p>Constructores clave de <code>std::thread</code>:</p>
+      <ul>
+        <li><code>std::thread t(f)</code> — lanza la función <code>f</code> en un hilo nuevo.</li>
+        <li><code>std::thread t(f, a, b)</code> — lanza <code>f(a, b)</code>; los argumentos se <strong>copian</strong> al hilo nuevo.</li>
+        <li><code>t.join()</code> — bloquea al hilo que llama hasta que <code>t</code> termina. Después, los recursos del hilo se liberan.</li>
+        <li><code>t.detach()</code> — se desentiende del hilo (peligroso en aplicaciones serias; evita que el hilo sobreviva a sus datos).</li>
+      </ul>
+      <div class="callout danger">
+        <div class="co-title">🔥 Regla de oro</div>
+        <p>Si un <code>std::thread</code> se destruye sin haber hecho <code>join()</code> ni <code>detach()</code>,
+        el programa llama a <code>std::terminate()</code> y muere. Todo hilo lanzado debe recogerse.</p>
+      </div>
+
+      <h2>Pasar datos a un hilo</h2>
+      <p>El patrón habitual en planta: un mismo código de hilo para varios dispositivos, parametrizado por índice.</p>
+      <pre data-lang="cpp" data-file="hilo_por_maquina.cpp"><code>#include &lt;iostream&gt;
+#include &lt;thread&gt;
+#include &lt;vector&gt;
+
+void hMaquina(int nMaquina) {          // un hilo por máquina
+    std::cout &lt;&lt; "Máquina " &lt;&lt; nMaquina &lt;&lt; " trabajando\n";
+}
+
+int main() {
+    std::vector&lt;std::thread&gt; hilos;
+    for (int i = 0; i &lt; 5; i++)
+        hilos.emplace_back(hMaquina, i);   // lanza 5 hilos
+    for (auto&amp; h : hilos)
+        h.join();                          // recoge los 5
+}</code></pre>
+      <p>Para pasar una referencia (y que el hilo escriba en una variable del que llama) hay que pedirlo
+      explícitamente con <code>std::ref</code>:</p>
+      <pre data-lang="cpp"><code>void mide(double&amp; resultado);   // el hilo escribe en resultado
+
+double temperatura;
+std::thread t(mide, std::ref(temperatura));
+t.join();
+// aquí temperatura ya tiene el valor medido</code></pre>
+
+      <h2>std::jthread: hilos con parada cooperativa (C++20)</h2>
+      <p><code>std::jthread</code> hace <code>join()</code> automáticamente al destruirse y añade una señal de parada
+      (<code>stop_token</code>) que el hilo puede consultar. Es la herramienta adecuada para la <strong>parada
+      ordenada</strong> de una instalación (ver <a href="planta-super.html">Supervisión y parada</a>).</p>
+      <pre data-lang="cpp" data-file="jthread.cpp"><code>#include &lt;iostream&gt;
+#include &lt;thread&gt;
+#include &lt;chrono&gt;
+
+void hCinta(std::stop_token parada) {      // recibe la señal de parada
+    while (!parada.stop_requested()) {     // trabaja mientras nadie pida parar
+        std::cout &lt;&lt; "cinta en marcha\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    std::cout &lt;&lt; "cinta detenida de forma ordenada\n";
+}
+
+int main() {
+    std::jthread cinta(hCinta);            // se une sola al salir del ámbito
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    cinta.request_stop();                  // pide la parada; hCinta lo verá
+}</code></pre>
+
+      <h2>El hilo que llama: this_thread</h2>
+      <table>
+        <tr><th>Función</th><th>Efecto</th></tr>
+        <tr><td><code>std::this_thread::sleep_for(d)</code></td><td>Duerme al hilo actual durante la duración <code>d</code> (p. ej. <code>std::chrono::milliseconds(10)</code>).</td></tr>
+        <tr><td><code>std::this_thread::sleep_until(t)</code></td><td>Duerme hasta el instante absoluto <code>t</code>; útil para períodos de muestreo exactos.</td></tr>
+        <tr><td><code>std::this_thread::yield()</code></td><td>Sugiere al planificador ceder el turno a otro hilo.</td></tr>
+        <tr><td><code>std::this_thread::get_id()</code></td><td>Identificador del hilo actual; práctico para trazas.</td></tr>
+        <tr><td><code>std::thread::hardware_concurrency()</code></td><td>Número de hilos hardware disponibles (orientativo).</td></tr>
+      </table>
+
+      <h2>Cuántos hilos lanzar</h2>
+      <p>En control de instalaciones el número de hilos no lo dicta el número de núcleos, sino el número de
+      <strong>actividades concurrentes</strong>: uno por dispositivo o estación, más los de servicio
+      (comunicaciones, supervisión, alarmas). Decenas de hilos bloqueados no cuestan apenas CPU; solo memoria.
+      Lo caro es el hilo que <em>consulta en bucle</em> sin bloquearse (busy-wait) — eso se corrige con semáforos
+      y variables de condición, como verás en <a href="semaforos.html">Semáforos</a>.</p>
+
+      <div class="callout tip">
+        <div class="co-title">💡 Resumen</div>
+        <p>Un hilo = una actividad continua de la planta. Lanza uno por dispositivo, recoge todos con
+        <code>join()</code> (o usa <code>std::jthread</code>), y nunca dejes un <code>std::thread</code> sin unir.</p>
+      </div>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

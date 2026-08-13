@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laboratorio · Célula FMS: prensa, CNC y robot · C++ Concurrente</title>
+  <meta name="description" content="Simulador interactivo de una célula de fabricación flexible: cuatro hilos coordinados con semáforos productor/consumidor y el robot como región crítica.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="lab-fms">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Laboratorio 1 · Semáforos</p>
+      <h1>Célula FMS: prensa, CNC y robot</h1>
+      <p class="lead">Una célula de fabricación flexible: las piezas llegan a la posición de entrada, un robot las
+      lleva a la prensa (estampado), luego al CNC (mecanizado) y finalmente a la salida. Cuatro hilos gobiernan las
+      cuatro posiciones y el robot es región crítica. Es el ejercicio ej24 del cuaderno SCTR, ejecutable.</p>
+
+      <h2>Qué observar</h2>
+      <ul>
+        <li>Cómo <code>hPrensa</code> queda <strong>bloqueado</strong> en <code>wait(scEntradaPrensa)</code> hasta que
+        <code>hEntrada</code> hace <code>signal</code> tras depositar la pieza.</li>
+        <li>Cómo los hilos se turnan en <code>wait(sRobot)</code>: nunca dos transferencias a la vez.</li>
+        <li>Cómo <code>spEntradaPrensa</code> impide que <code>hEntrada</code> intente dejar una pieza si la prensa
+        aún no ha terminado y soltado su hueco.</li>
+      </ul>
+      <p>Pulsa <strong>Ejecutar</strong> y usa <strong>Paso</strong> para avanzar instrucción a instrucción.</p>
+
+      <div id="lab" class="lab-shell"></div>
+
+      <h2>Mapa semáforo → significado</h2>
+      <table>
+        <tr><th>Semáforo</th><th>Inicial</th><th>Una unidad significa…</th></tr>
+        <tr><td><code>spEntradaPrensa</code></td><td>1</td><td>la prensa tiene su hueco libre</td></tr>
+        <tr><td><code>scEntradaPrensa</code></td><td>0</td><td>hay pieza esperando en la prensa</td></tr>
+        <tr><td><code>spPrensaCNC</code></td><td>1</td><td>el CNC tiene su hueco libre</td></tr>
+        <tr><td><code>scPrensaCNC</code></td><td>0</td><td>hay pieza esperando en el CNC</td></tr>
+        <tr><td><code>spCNCSalida</code></td><td>1</td><td>la posición de salida está libre</td></tr>
+        <tr><td><code>scCNCSalida</code></td><td>0</td><td>hay pieza terminada en la salida</td></tr>
+        <tr><td><code>sRobot</code></td><td>1</td><td>el robot está disponible</td></tr>
+      </table>
+
+      <h2>Qué línea produce qué efecto</h2>
+      <table class="line-map">
+        <tr><th>Línea</th><th>Efecto en la planta</th></tr>
+        <tr><td>hEntrada:4 wait(spEntradaPrensa)</td><td>La entrada se detiene si la prensa está ocupada.</td></tr>
+        <tr><td>hEntrada:5 wait(sRobot)</td><td>Solicita el robot; si otro hilo lo usa, espera.</td></tr>
+        <tr><td>hEntrada:6–7 coge/deja</td><td>El brazo gira de la entrada a la prensa con la pieza.</td></tr>
+        <tr><td>hEntrada:9 signal(scEntradaPrensa)</td><td>Despierta a hPrensa: empieza el estampado.</td></tr>
+        <tr><td>hPrensa:4 estampa()</td><td>La prensa trabaja durante varios ticks.</td></tr>
+        <tr><td>hPrensa:10 signal(spEntradaPrensa)</td><td>Libera la prensa: hEntrada puede traer la siguiente pieza.</td></tr>
+        <tr><td>hCNC:4 mecaniza()</td><td>El CNC trabaja la pieza.</td></tr>
+        <tr><td>hSalida:4 while(barrera_salida())</td><td>Espera a que el operario retire la pieza terminada.</td></tr>
+      </table>
+
+      <h2>Código C++20 equivalente</h2>
+      <pre data-lang="cpp" data-file="celula_fms.cpp"><code>#include &lt;semaphore&gt;
+#include &lt;thread&gt;
+#include &lt;mutex&gt;
+
+std::binary_semaphore spEntradaPrensa(1), scEntradaPrensa(0);
+std::binary_semaphore spPrensaCNC(1),     scPrensaCNC(0);
+std::binary_semaphore spCNCSalida(1),     scCNCSalida(0);
+std::binary_semaphore sRobot(1);          // robot: región crítica
+
+void hEntrada() {
+    while (true) {
+        esperarPiezaEnEntrada();          // sensor / barrera óptica
+        spEntradaPrensa.acquire();
+        sRobot.acquire();
+        coge(100, 0); deja(0, 100);
+        sRobot.release();
+        scEntradaPrensa.release();
+    }
+}
+
+void hPrensa() {
+    while (true) {
+        scEntradaPrensa.acquire();
+        estampa();
+        spPrensaCNC.acquire();
+        sRobot.acquire();
+        coge(0, 100); deja(-100, 0);
+        sRobot.release();
+        spEntradaPrensa.release();
+        scPrensaCNC.release();
+    }
+}
+
+void hCNC() {
+    while (true) {
+        scPrensaCNC.acquire();
+        mecaniza();
+        spCNCSalida.acquire();
+        sRobot.acquire();
+        coge(-100, 0); deja(0, -100);
+        sRobot.release();
+        spPrensaCNC.release();
+        scCNCSalida.release();
+    }
+}
+
+void hSalida() {
+    while (true) {
+        scCNCSalida.acquire();
+        while (piezaEnSalida())           // el operario debe retirarla
+            std::this_thread::yield();
+        spCNCSalida.release();
+    }
+}
+
+int main() {
+    std::jthread t1(hEntrada), t2(hPrensa), t3(hCNC), t4(hSalida);
+}</code></pre>
+
+      <h2>Experimentos propuestos</h2>
+      <ol>
+        <li><strong>Elimina mentalmente <code>spPrensaCNC</code></strong>: ¿qué intentaría hacer hPrensa mientras el
+        CNC mecaniza? (Respuesta: esperar el robot, mover la pieza… y el código de la simulación bloquearía la
+        entrega; en hardware real habría colisión.)</li>
+        <li>Haz que <code>estampa()</code> dure mucho más que <code>mecaniza()</code> y observa dónde se acumulan las
+        esperas: ese es el cuello de botella.</li>
+        <li>Cuenta en el registro cuántos <code>wait(sRobot)</code> quedan bloqueados por ciclo: ¿cuánto tiempo está
+        el robot retenido?</li>
+      </ol>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+  <script src="../js/motor.js"></script>
+  <script src="../js/lab-fms.js"></script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Productor–consumidor · C++ Concurrente</title>
+  <meta name="description" content="El patrón productor-consumidor con buffer limitado aplicado a instalaciones: semáforos de huecos y elementos, mutex del buffer y versión con cola bloqueante.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="pc">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Patrones clásicos</p>
+      <h1>Productor–consumidor</h1>
+      <p class="lead">El patrón que aparece en cada junta de una planta: una estación produce, la siguiente consume,
+      y entre medias un buffer de capacidad finita. Se gobierna con dos semáforos (huecos y elementos) y, si el
+      buffer es una estructura compartida, un mutex.</p>
+
+      <h2>El problema</h2>
+      <ul>
+        <li>El productor no puede depositar si el buffer está <strong>lleno</strong>: debe esperar un hueco.</li>
+        <li>El consumidor no puede retirar si el buffer está <strong>vacío</strong>: debe esperar un elemento.</li>
+        <li>El acceso al buffer debe ser <strong>mutuamente excluyente</strong> si se implementa sobre memoria compartida.</li>
+      </ul>
+
+      <h2>Solución con semáforos (estilo clásico)</h2>
+      <pre data-lang="cpp" data-file="pc_clasico.cpp"><code>constexpr int N = 5;                       // capacidad del buffer
+
+Semaforo sHuecos(N);                       // N huecos libres al empezar
+Semaforo sElementos(0);                    // ningún elemento al empezar
+Semaforo sMutex(1);                        // protege el buffer
+std::queue&lt;Pieza&gt; buffer;
+
+void hProductor() {
+    while (true) {
+        Pieza p = fabricar();
+        sHuecos.wait();                    // espera hueco
+        sMutex.wait();                     // región crítica
+        buffer.push(p);
+        sMutex.signal();
+        sElementos.signal();               // un elemento disponible
+    }
+}
+
+void hConsumidor() {
+    while (true) {
+        sElementos.wait();                 // espera elemento
+        sMutex.wait();                     // región crítica
+        Pieza p = buffer.front();
+        buffer.pop();
+        sMutex.signal();
+        sHuecos.signal();                  // un hueco liberado
+        procesar(p);
+    }
+}</code></pre>
+      <div class="callout warning">
+        <div class="co-title">⚠ Orden de los wait</div>
+        <p>El productor espera <strong>primero el hueco y luego el mutex</strong>, nunca al revés. Si tomara el
+        mutex y luego esperara hueco dentro de la región crítica, el consumidor jamás podría entrar a vaciar:
+        interbloqueo. Esta es la causa número uno de deadlock en buffers.</p>
+      </div>
+
+      <h2>Solución moderna con cola bloqueante</h2>
+      <p>Con la clase <code>ColaBloqueante</code> de la sección <a href="colas.html">Colas</a>, los tres semáforos
+      quedan encapsulados y el código de estación se reduce a push/pop:</p>
+      <pre data-lang="cpp"><code>ColaBloqueante&lt;Pieza&gt; buffer(N);
+
+void hProductor() {
+    while (true) buffer.push(fabricar());     // bloquea si llena
+}
+void hConsumidor() {
+    while (true) procesar(buffer.pop());      // bloquea si vacía
+}</code></pre>
+
+      <h2>Varios productores, varios consumidores</h2>
+      <p>El patrón escala sin cambios: cualquier número de hilos puede hacer push y pop de la misma cola, porque
+      la propia cola serializa el acceso. Ejemplo típico: varias cintas de entrada alimentan un pulmón común del
+      que tiran varios robots.</p>
+
+      <h2>Interpretación física</h2>
+      <table>
+        <tr><th>Concepto del patrón</th><th>En la instalación</th></tr>
+        <tr><td>Buffer</td><td>Pulmón, almacén intermedio, tramo de cinta, mesa de transferencia.</td></tr>
+        <tr><td>Capacidad N</td><td>Número de posiciones físicas reales.</td></tr>
+        <tr><td>Productor bloqueado</td><td>Estación aguas arriba parada porque no hay dónde dejar.</td></tr>
+        <tr><td>Consumidor bloqueado</td><td>Estación aguas abajo en espera de material (hambre de pieza).</td></tr>
+        <tr><td>Ocupación media</td><td>Indicador de equilibrio de la línea (KPI del laboratorio).</td></tr>
+      </table>
+
+      <div class="callout tip">
+        <div class="co-title">💡 Laboratorio</div>
+        <p>La <a href="../labs/envasado.html">línea de envasado</a> implementa exactamente este patrón: observa los
+        semáforos <code>sHuecos</code>, <code>sBotellas</code> y <code>sMutex</code> mientras la llenadora y la
+        empaquetadora van a ritmos distintos.</p>
+      </div>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

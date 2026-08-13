@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Diseño paso a paso · C++ Concurrente</title>
+  <meta name="description" content="Método en ocho pasos para diseñar el control concurrente de una instalación, con un ejemplo completo: la célula de etiquetado.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="diseno">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Control de planta</p>
+      <h1>Diseño paso a paso</h1>
+      <p class="lead">Un método repetible para pasar del enunciado de una instalación a su programa concurrente. Lo
+      desarrollamos con un ejemplo completo: una <strong>célula de etiquetado</strong> donde las piezas llegan por una
+      cinta, se etiquetan de una en una y salen por otra cinta; la etiquetadora tiene un cargador de 50 etiquetas y
+      un operario lo repone cuando se agota.</p>
+
+      <h2>Paso 1 · Inventario de elementos</h2>
+      <table>
+        <tr><th>Elemento</th><th>Entradas (sensores)</th><th>Salidas (actuadores)</th></tr>
+        <tr><td>Cinta de entrada</td><td>barrera de llegada de pieza</td><td>marcha/paro</td></tr>
+        <tr><td>Etiquetadora</td><td>presencia de pieza en su interior</td><td>ciclo de etiquetado, contador de etiquetas</td></tr>
+        <tr><td>Cinta de salida</td><td>barrera de salida</td><td>marcha/paro</td></tr>
+        <tr><td>Cargador de etiquetas</td><td>contador restante</td><td>— (lo repone el operario)</td></tr>
+      </table>
+
+      <h2>Paso 2 · Actividades concurrentes → hilos</h2>
+      <p>Pregunta clave: <em>¿qué cosas ocurren a la vez?</em> Cada una es un hilo:</p>
+      <ul>
+        <li><code>hEntrada</code>: trae piezas hasta la etiquetadora.</li>
+        <li><code>hEtiquetadora</code>: etiqueta y entrega.</li>
+        <li><code>hSalida</code>: evacúa las piezas etiquetadas.</li>
+        <li><code>hOperario</code>: repone el cargador cuando se agota.</li>
+      </ul>
+
+      <h2>Paso 3 · Recursos y capacidades</h2>
+      <ul>
+        <li>La posición de la etiquetadora admite <strong>1 pieza</strong> → buffer de capacidad 1.</li>
+        <li>El cargador admite <strong>50 etiquetas</strong> → recurso contador.</li>
+        <li>La cinta de salida solo admite <strong>1 pieza</strong> en su extremo → buffer de capacidad 1.</li>
+      </ul>
+
+      <h2>Paso 4 · Relaciones de sincronización</h2>
+      <p>Cada junta productor/consumidor recibe su pareja sp/sc, y cada recurso compartido, su semáforo:</p>
+      <table>
+        <tr><th>Semáforo</th><th>Valor inicial</th><th>Significado</th></tr>
+        <tr><td><code>spEntradaEti</code></td><td>1</td><td>hueco en la etiquetadora (productor: hEntrada)</td></tr>
+        <tr><td><code>scEntradaEti</code></td><td>0</td><td>pieza presente en la etiquetadora (consumidor: hEtiquetadora)</td></tr>
+        <tr><td><code>spEtiSalida</code></td><td>1</td><td>hueco en la cinta de salida</td></tr>
+        <tr><td><code>scEtiSalida</code></td><td>0</td><td>pieza etiquetada en la salida</td></tr>
+        <tr><td><code>sEtiquetas</code></td><td>50</td><td>etiquetas restantes en el cargador</td></tr>
+        <tr><td><code>sAviso</code></td><td>0</td><td>señal «cargador agotado» para el operario</td></tr>
+      </table>
+
+      <h2>Paso 5 · Bucle de cada hilo</h2>
+      <pre data-lang="cpp" data-file="celula_etiquetado.cpp"><code>semaforo spEntradaEti = 1, scEntradaEti = 0;
+semaforo spEtiSalida  = 1, scEtiSalida  = 0;
+semaforo sEtiquetas   = 50;
+semaforo sAviso       = 0;
+
+void hEntrada() {
+    while (1) {
+        cintaEntrada(1);                 // cinta en marcha
+        while (!sensorLlegada());        // hasta que llegue una pieza
+        cintaEntrada(0);
+        wait(spEntradaEti);              // espera hueco en la etiquetadora
+        transferirAEtiquetadora();       // empuja la pieza dentro
+        signal(scEntradaEti);            // la etiquetadora ya tiene pieza
+    }
+}
+
+void hEtiquetadora() {
+    while (1) {
+        wait(scEntradaEti);              // espera pieza
+        wait(sEtiquetas);                // gasta una etiqueta (si hay 0, bloquea)
+        etiquetar();                     // ciclo de etiquetado
+        wait(spEtiSalida);               // espera hueco en la salida
+        transferirASalida();
+        signal(spEntradaEti);            // su posición queda libre
+        signal(scEtiSalida);             // hay pieza etiquetada en la salida
+    }
+}
+
+void hSalida() {
+    while (1) {
+        wait(scEtiSalida);               // espera pieza etiquetada
+        cintaSalida(1);
+        while (!sensorSalida());         // hasta que la pieza abandone
+        cintaSalida(0);
+        signal(spEtiSalida);             // el hueco vuelve a estar libre
+    }
+}
+
+void hOperario() {
+    while (1) {
+        wait(sAviso);                    // duerme hasta que falten etiquetas
+        reponerCargador();               // el operario carga 50 etiquetas
+        for (int i = 0; i &lt; 50; i++)
+            signal(sEtiquetas);          // repone los 50 permisos
+    }
+}
+
+int main() {
+    concurrente {
+        hEntrada();
+        hEtiquetadora();
+        hSalida();
+        hOperario();
+    }
+}</code></pre>
+
+      <h2>Paso 6 · Completar el aviso del cargador</h2>
+      <p>Falta que alguien haga <code>signal(sAviso)</code>. Lo natural es en la propia etiquetadora cuando detecta
+      el cargador casi vacío; con semáforo contador basta comprobar antes de esperar:</p>
+      <pre data-lang="cpp"><code>// dentro de hEtiquetadora, justo antes de wait(sEtiquetas):
+if (etiquetasRestantes() == 1)
+    signal(sAviso);              // avisa con antelación al operario</code></pre>
+
+      <h2>Paso 7 · Verificación de invariantes</h2>
+      <p>Antes de darlo por bueno, repasa la lista:</p>
+      <ul>
+        <li><strong>Deadlock</strong>: ¿algún hilo espera un semáforo que solo señaliza él mismo o un hilo que a su vez lo espera? (Aquí no: el grafo de dependencias es una cadena.)</li>
+        <li><strong>Capacidades</strong>: ¿puede alguna posición física tener 2 piezas? Cada <code>signal(sc…)</code> corresponde a una sola pieza → no.</li>
+        <li><strong>Señales perdidas</strong>: todo <code>signal</code> tiene un <code>wait</code> que lo consumirá tarde o temprano.</li>
+        <li><strong>Inanición</strong>: ¿puede una pieza quedarse sin procesar para siempre? No hay colas con prioridad que la salten.</li>
+      </ul>
+
+      <h2>Paso 8 · Traducción a C++ moderno</h2>
+      <pre data-lang="cpp" data-file="celula_etiquetado.cpp"><code>std::binary_semaphore spEntradaEti(1), scEntradaEti(0);
+std::binary_semaphore spEtiSalida(1),  scEtiSalida(0);
+std::counting_semaphore&lt;50&gt; sEtiquetas(50);
+std::binary_semaphore sAviso(0);
+
+// wait(s)  →  s.acquire();     signal(s)  →  s.release();
+// Los hilos se lanzan como std::jthread para parada ordenada:
+
+int main() {
+    std::jthread t1(hEntrada), t2(hEtiquetadora),
+                 t3(hSalida),  t4(hOperario);
+}</code></pre>
+
+      <div class="callout tip">
+        <div class="co-title">💡 Regla nemotécnica</div>
+        <p>Por cada junta de la instalación escribe dos frases: «el productor <strong>espera hueco</strong> antes de
+        depositar y <strong>avisa elemento</strong> después» y «el consumidor <strong>espera elemento</strong> antes de
+        retirar y <strong>avisa hueco</strong> después». Con esas dos frases y el inventario de recursos, el programa
+        sale solo.</p>
+      </div>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

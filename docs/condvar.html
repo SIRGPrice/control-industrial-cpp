@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Variables de condición · C++ Concurrente</title>
+  <meta name="description" content="Esperar sin consumir CPU con std::condition_variable: wait con predicado, notify_one y notify_all, y su papel dentro de las colas bloqueantes.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="condvar">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Fundamentos</p>
+      <h1>Variables de condición</h1>
+      <p class="lead">Muchos hilos de planta necesitan <em>esperar hasta que algo ocurra</em>: que llegue una pieza,
+      que el depósito alcance el nivel, que se reciba la consigna por el canal. Consultar en bucle
+      (<code>while (!sensor());</code>) desperdicia CPU. La variable de condición permite dormir al hilo hasta que
+      otro le avise.</p>
+
+      <h2>La espera activa y su coste</h2>
+      <p>En los primeros ejercicios del cuaderno verás esperas por consulta:</p>
+      <pre data-lang="cpp"><code>while (!sensorEntrada());   // consulta el sensor miles de veces por segundo
+cintaEntrada(0);</code></pre>
+      <p>El hilo está «esperando», pero consume el 100 % de su núcleo. En un microcontrolador además impide
+      dormir la CPU. La alternativa correcta es bloquearse y ser despertado por quien produce la condición.</p>
+
+      <h2>wait + notify</h2>
+      <p>Una <code>std::condition_variable</code> se usa siempre junto a un <code>std::mutex</code> y una variable
+      que describe la condición:</p>
+      <pre data-lang="cpp" data-file="espera_pieza.cpp"><code>#include &lt;mutex&gt;
+#include &lt;condition_variable&gt;
+
+std::mutex mtx;
+std::condition_variable cv;
+bool piezaLista = false;                 // la condición
+
+void hPrensa() {                         // CONSUMIDOR de la señal
+    std::unique_lock&lt;std::mutex&gt; lk(mtx);
+    cv.wait(lk, [] { return piezaLista; });   // duerme hasta piezaLista == true
+    // aquí ya hay pieza: trabajar con ella
+}
+
+void hCinta() {                          // PRODUCTOR de la señal
+    // ... la cinta trae la pieza ...
+    {
+        std::lock_guard&lt;std::mutex&gt; lk(mtx);
+        piezaLista = true;               // 1) cambia la condición
+    }
+    cv.notify_one();                     // 2) despierta a un esperando
+}</code></pre>
+      <p>La secuencia siempre es la misma: <strong>cambiar la condición bajo el mutex</strong> y después
+      <strong>notificar</strong>. El que espera usa <code>wait</code> con predicado, que equivale a:</p>
+      <pre data-lang="cpp"><code>while (!predicado())     // comprueba la condición
+    cv.wait(lk);         // si no se cumple, suelta el mutex y duerme</code></pre>
+
+      <h2>Por qué el predicado es obligatorio</h2>
+      <ul>
+        <li><strong>Despertares espurios</strong>: el estándar permite que <code>wait</code> vuelva sin que nadie
+        haya notificado. El predicado lo neutraliza.</li>
+        <li><strong>Varios esperando</strong>: si dos hilos esperan y solo hay una pieza, <code>notify_one</code>
+        despierta a uno; el otro debe volver a dormir al comprobar el predicado.</li>
+        <li><strong>Señal antes de la espera</strong>: si la condición se cumplió antes de llegar al
+        <code>wait</code>, el predicado lo detecta y no se duerme.</li>
+      </ul>
+
+      <h2>notify_one vs notify_all</h2>
+      <table>
+        <tr><th>Llamada</th><th>Despierta</th><th>Úsalo cuando…</th></tr>
+        <tr><td><code>notify_one()</code></td><td>A un hilo esperando (si hay alguno)</td><td>La condición sirve para uno solo: una pieza, un hueco.</td></tr>
+        <tr><td><code>notify_all()</code></td><td>A todos los hilos esperando</td><td>La condición puede servir a varios a la vez, o cambia de tipo (p. ej. parada general).</td></tr>
+      </table>
+
+      <h2>Esperar con límite de tiempo</h2>
+      <p>En una instalación real no se espera eternamente: si un sensor no responde en 5 s hay alarma. Las
+      variantes temporizadas devuelven <code>false</code> si se agota el tiempo:</p>
+      <pre data-lang="cpp"><code>std::unique_lock&lt;std::mutex&gt; lk(mtx);
+if (!cv.wait_for(lk, std::chrono::seconds(5),
+                 [] { return piezaLista; })) {
+    // TIMEOUT: la pieza no llegó → tratar como avería
+}</code></pre>
+
+      <h2>Dónde las usarás</h2>
+      <ul>
+        <li>Dentro de las <a href="colas.html">colas bloqueantes</a>: una condición para «no vacía» y otra para «no llena».</li>
+        <li>Como base de los semáforos clásicos: un semáforo se implementa con mutex + condición + contador.</li>
+        <li>Para eventos de planta: fin de lote, consigna recibida, permiso del operario.</li>
+      </ul>
+
+      <div class="callout danger">
+        <div class="co-title">🔥 Error típico</div>
+        <p>Notificar sin haber cambiado la condición, o cambiarla sin mutex: el esperando puede despertar, ver que
+        la condición sigue siendo falsa y volver a dormir… o perder la señal para siempre. La receta es invariable:
+        <em>mutex → cambiar condición → soltar → notify</em>.</p>
+      </div>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

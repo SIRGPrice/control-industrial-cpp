@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Patrones con semáforos · C++ Concurrente</title>
+  <meta name="description" content="Patrones de sincronización con semáforos para instalaciones: rendezvous, orden, pool de recursos, señalización y parejas productor/consumidor sp/sc.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="sem-patrones">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Semáforos</p>
+      <h1>Patrones con semáforos</h1>
+      <p class="lead">Con wait y signal se construyen unos pocos patrones que resuelven el 95 % de las
+      sincronizaciones de una planta. Cada patrón se presenta con su esquema de semáforos y su valor inicial, que
+      es lo que hay que aprender a decidir.</p>
+
+      <h2>1 · Cita (rendezvous): «espérame aquí»</h2>
+      <p>Dos hilos deben llegar a un punto antes de continuar. Ejemplo: el robot no puede empezar hasta que el
+      hilo de seguridad haya terminado la comprobación de la barrera óptica.</p>
+      <pre data-lang="cpp"><code>Semaforo sListo(0);            // empieza en 0: evento pendiente
+
+void hSeguridad() {
+    comprobarBarreras();       // operación larga
+    sListo.signal();           // «ya está»
+}
+
+void hRobot() {
+    sListo.wait();             // espera la comprobación
+    trabajar();
+}</code></pre>
+      <p>Para cita completa entre N hilos (todos esperan a todos) se usa una <a href="barrera-rendezvous.html">barrera</a>.</p>
+
+      <h2>2 · Orden entre etapas: «primero A, luego B»</h2>
+      <p>Generalización del anterior para imponer secuencias. Cada flecha del diagrama de la instalación es un
+      semáforo inicializado a 0:</p>
+      <pre data-lang="cpp"><code>Semaforo sLleno(0), sCalentado(0);
+
+void hLlenado()    { llenarDeposito();  sLleno.signal(); }
+void hCalentador() { sLleno.wait(); calentar(); sCalentado.signal(); }
+void hMezclador()  { sCalentado.wait(); mezclar(); }</code></pre>
+
+      <h2>3 · Pool de recursos: «hay N disponibles»</h2>
+      <p>Un semáforo contador con N permisos limita cuántos hilos usan un recurso compartido. Del cuaderno: un
+      operario atendiendo 10 máquinas, o 7 robots máximo alrededor de una cuba.</p>
+      <pre data-lang="cpp"><code>Semaforo sMaquinas(10);        // 10 máquinas libres al arrancar
+
+void hTrabajo() {
+    sMaquinas.wait();          // reserva una máquina
+    usarMaquina();
+    sMaquinas.signal();        // la devuelve al terminar
+}</code></pre>
+      <p>El valor del semáforo en cada instante dice cuántas máquinas quedan libres: diagnóstico gratis.</p>
+
+      <h2>4 · Exclusión mutua: «de uno en uno»</h2>
+      <p>Semáforo binario inicializado a 1 como región crítica. En los ejercicios: <code>sRobot</code> (el robot de
+      la célula), <code>sPantalla</code> (la única pantalla), <code>sMensaje</code> (el mensaje del panel). En C++
+      moderno se prefiere <code>std::mutex</code> + <code>lock_guard</code>, pero el razonamiento es idéntico:</p>
+      <pre data-lang="cpp"><code>Semaforo sRobot(1);
+
+void muevePieza(int desde, int hasta) {
+    sRobot.wait();             // pedimos el robot
+    coge(desde);
+    deja(hasta);
+    sRobot.signal();           // lo devolvemos SIEMPRE
+}</code></pre>
+      <div class="callout warning">
+        <div class="co-title">⚠ El signal olvidado</div>
+        <p>Si una ruta sale de la región crítica sin <code>signal</code> (un return anticipado, una excepción), el
+        recurso queda secuestrado y la planta se para. En C++ usa <code>lock_guard</code>/<code>unique_lock</code>;
+        si usas semáforos, estructura el código para que el signal esté siempre en el camino de salida.</p>
+      </div>
+
+      <h2>5 · Pareja productor/consumidor (sp/sc)</h2>
+      <p>El patrón central de toda línea de producción. Entre dos estaciones hay una posición (o buffer) de
+      capacidad C, y se gobierna con dos semáforos:</p>
+      <pre data-lang="cpp"><code>Semaforo sp(C);        // huecos libres: empieza en C
+Semaforo sc(0);        // elementos listos: empieza en 0
+
+void productor() {
+    sp.wait();             // ¿hay hueco?
+    depositar(elemento);
+    sc.signal();           // hay un elemento más
+}
+
+void consumidor() {
+    sc.wait();             // ¿hay elemento?
+    retirar(elemento);
+    sp.signal();           // hay hueco de nuevo
+}</code></pre>
+      <p>Si la posición solo cabe una pieza (una prensa, una plataforma, una celda de entrada), C = 1. Si es un
+      pulmón o almacén intermedio, C es su capacidad. Además, si el depósito es una estructura de datos
+      compartida, se añade un tercer semáforo mutex para protegerla — el patrón completo está en
+      <a href="productor-consumidor.html">Productor–consumidor</a> y se puede tocar en el
+      <a href="../labs/envasado.html">laboratorio de envasado</a>.</p>
+
+      <h2>6 · Limitación de ritmo: «no más de N por minuto»</h2>
+      <p>Un hilo repone permisos a ritmo fijo y los consumidores los gastan: sirve para limitar arranques de
+      motores, accesos a un horno, inyección de piezas…</p>
+      <pre data-lang="cpp"><code>Semaforo sTurnos(0);
+
+void hReloj() {                          // repone un permiso cada 2 s
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        sTurnos.signal();
+    }
+}
+
+void hInyector() {
+    sTurnos.wait();                      // solo avanza si hay permiso
+    inyectarPieza();
+}</code></pre>
+
+      <h2>Cómo elegir el semáforo adecuado</h2>
+      <table>
+        <tr><th>Pregunta</th><th>Respuesta → semáforo</th></tr>
+        <tr><td>¿Es un evento que ocurre una vez?</td><td>Binario a 0, el productor hace signal.</td></tr>
+        <tr><td>¿Es un recurso de una sola unidad?</td><td>Binario a 1 (mutex).</td></tr>
+        <tr><td>¿Hay N unidades del recurso?</td><td>Contador a N.</td></tr>
+        <tr><td>¿Es un buffer entre estaciones?</td><td>Pareja sp/sc con capacidad C.</td></tr>
+        <tr><td>¿N hilos deben esperarse entre sí?</td><td>Barrera (semáforos + contador).</td></tr>
+      </table>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

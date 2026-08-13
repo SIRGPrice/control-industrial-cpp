@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Barrera y rendezvous · C++ Concurrente</title>
+  <meta name="description" content="Barreras reutilizables y rendezvous con semáforos: puntos de encuentro entre hilos para fases de proceso, lotes y arranques coordinados de planta.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="barrera">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Patrones clásicos</p>
+      <h1>Barrera y rendezvous</h1>
+      <p class="lead">A veces los hilos no intercambian datos: solo necesitan <em>esperarse</em>. Una barrera es un
+      punto donde N hilos deben presentarse todos antes de que cualquiera siga; un rendezvous es la cita entre dos.
+      En planta aparecen en fases de proceso, lotes y arranques coordinados.</p>
+
+      <h2>Barrera simple (un solo uso)</h2>
+      <pre data-lang="cpp" data-file="barrera.cpp"><code>Semaforo sLlegada(0);      // señales de llegada
+Semaforo sApertura(0);     // permiso para continuar
+std::mutex m;
+int nLlegados = 0;
+constexpr int N = 4;       // hilos que deben encontrarse
+
+void esperaBarrera() {
+    {
+        std::lock_guard&lt;std::mutex&gt; lk(m);
+        nLlegados++;
+    }
+    sLlegada.signal();                    // «ya estoy»
+
+    if (nLlegados == N) {                 // el último en llegar
+        for (int i = 0; i &lt; N; i++)
+            sApertura.signal();           // abre la barrera para todos
+    } else {
+        sApertura.wait();                 // los demás esperan
+    }
+}</code></pre>
+      <p>Cada hilo llama a <code>esperaBarrera()</code>; ninguno pasa hasta que hayan llegado los N. Ejemplo: cuatro
+      dosificadores que deben descargar sus ingredientes a la vez en la mezcladora.</p>
+
+      <h2>Barrera reutilizable (por fases)</h2>
+      <p>Si el proceso tiene fases (llenado → calentado → mezclado) y los hilos deben sincronizarse al final de
+      cada fase, la barrera debe «rearmarse». <code>std::barrier</code> de C++20 lo da hecho:</p>
+      <pre data-lang="cpp"><code>#include &lt;barrier&gt;
+
+std::barrier finDeFase(4);          // 4 hilos participantes
+
+void hEstacion() {
+    while (true) {
+        trabajarEnLaFase();
+        finDeFase.arrive_and_wait();  // espera a los demás y rearma
+    }
+}</code></pre>
+
+      <h2>Rendezvous entre dos hilos</h2>
+      <p>Es la barrera de dos, pero con semáforos queda más transparente y permite que cada hilo anuncie su llegada
+      y espere la del otro:</p>
+      <pre data-lang="cpp"><code>Semaforo sLlegadaA(0), sLlegadaB(0);
+
+void hA() { punto1(); sLlegadaA.signal(); sLlegadaB.wait(); punto2(); }
+void hB() { punto1(); sLlegadaB.signal(); sLlegadaA.wait(); punto2(); }</code></pre>
+      <p>Aplicación: el robot y la prensa deben terminar sus movimientos antes de abrir la guarda de seguridad.</p>
+
+      <h2>El grupo exacto: «entran de tres en tres»</h2>
+      <p>Variante del cuaderno (ej60): una máquina de mantenimiento solo opera sobre grupos de 3 robots del mismo
+      modelo. Se combina un semáforo contador que deja pasar de tres en tres con un mecanismo de aviso al tercero:</p>
+      <pre data-lang="cpp"><code>Semaforo sGrupo(3);          // solo pasan 3
+Semaforo sEntra(0);          // aviso del tercero a los otros dos
+std::mutex mtx;
+int nPreparados = 0;
+
+void esperaGrupo() {
+    sGrupo.wait();                     // tercer wait deja el semáforo en 0
+    {
+        std::lock_guard&lt;std::mutex&gt; lk(mtx);
+        nPreparados++;
+        if (nPreparados == 3) {
+            sEntra.signal();           // el tercero abre
+            sEntra.signal();
+        }
+    }
+    if (nPreparados &lt; 3) sEntra.wait();  // los dos primeros esperan
+}</code></pre>
+
+      <div class="callout tip">
+        <div class="co-title">💡 Cuál elegir</div>
+        <p>¿N hilos se esperan una vez? Barrera simple. ¿Se esperan en cada fase? <code>std::barrier</code>. ¿Dos
+        hilos se citan? Rendezvous con dos semáforos. ¿Entran en grupos de K? Semáforo contador K + aviso del
+        último.</p>
+      </div>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

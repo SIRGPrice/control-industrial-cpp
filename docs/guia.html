@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cómo usar esta web · C++ Concurrente</title>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="guia">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Empezar aquí</p>
+      <h1>Cómo usar esta web</h1>
+      <p class="lead">Esta documentación está pensada como material de estudio completo y como fuente de consulta
+      permanente para ingenieros de control de instalaciones. Aquí se explica cómo aprovecharla al máximo.</p>
+
+      <h2>Qué contiene</h2>
+      <ul>
+        <li><strong>Fundamentos</strong>: hilos, riesgos del estado compartido, mutex, variables de condición y atómicos. Es la base imprescindible.</li>
+        <li><strong>Semáforos y Colas</strong>: las dos herramientas de coordinación que más usarás en control de planta, con su API moderna de C++20.</li>
+        <li><strong>Patrones clásicos</strong>: productor–consumidor, lectores–escritores, barrera, rendezvous y pipeline, con ejemplos de instalación.</li>
+        <li><strong>Control de planta</strong>: cómo convertir una instalación física en una arquitectura de hilos, semáforos y colas bien diseñada.</li>
+        <li><strong>Laboratorios</strong>: simuladores interactivos de plantas industriales donde cada línea de código se ilumina cuando produce su efecto.</li>
+        <li><strong>Referencia</strong>: hoja de referencia rápida, errores comunes, glosario y ejercicios resueltos.</li>
+      </ul>
+
+      <h2>Ruta de estudio recomendada</h2>
+      <ol>
+        <li>Lee <a href="hilos.html">Hilos con std::thread</a> y <a href="riesgos.html">Riesgos del estado compartido</a>.</li>
+        <li>Aprende a proteger datos con <a href="mutex.html">Mutex</a> y a esperar sin consumir CPU con <a href="condvar.html">Variables de condición</a>.</li>
+        <li>Estudia <a href="semaforos.html">Semáforos</a> y sus <a href="semaforos-patrones.html">patrones</a>; luego <a href="colas.html">colas seguras</a> y <a href="paso-mensajes.html">paso de mensajes</a>.</li>
+        <li>Abre el <a href="../labs/fms.html">laboratorio de la célula FMS</a> y síguelo con la teoría delante.</li>
+        <li>Lee <a href="planta-arquitectura.html">Arquitectura de control</a> y <a href="planta-diseno.html">Diseño paso a paso</a>.</li>
+        <li>Practica con los <a href="../ref/ejercicios.html">ejercicios resueltos</a> intentando primero tu solución.</li>
+      </ol>
+
+      <h2>Cómo leer los laboratorios</h2>
+      <p>Cada laboratorio muestra una planta en funcionamiento y, a su lado, el código de cada hilo:</p>
+      <ul>
+        <li>La <strong>línea resaltada</strong> en cada columna es la instrucción que ese hilo está ejecutando ahora mismo.</li>
+        <li>El <strong>estado del hilo</strong> (listo, bloqueado, trabajando) aparece a la derecha de su nombre.</li>
+        <li>Los <strong>semáforos</strong> muestran su valor y cuántos hilos esperan en ellos; las <strong>colas</strong> muestran su ocupación.</li>
+        <li>El <strong>registro de eventos</strong> cuenta cada wait, signal, push y pop con su instante de tiempo.</li>
+        <li>Usa <strong>Paso</strong> para avanzar instrucción a instrucción y <strong>Velocidad</strong> para acelerar la simulación.</li>
+      </ul>
+
+      <div class="callout tip">
+        <div class="co-title">💡 Consejo</div>
+        <p>En los laboratorios, pausa la simulación justo cuando un hilo se bloquea y pregúntate: <em>¿qué signal
+        tiene que llegar para despertarlo y qué hilo lo emitirá?</em> Ese razonamiento es exactamente el que se
+        hace al depurar una instalación real.</p>
+      </div>
+
+      <h2>Estilo de los ejemplos</h2>
+      <p>Los ejemplos siguen el estilo clásico de los ejercicios de sistemas de tiempo real: un hilo por dispositivo,
+      semáforos con nombres <code>sp*</code> (productor) y <code>sc*</code> (consumidor), y mutex semafóricos para las
+      regiones críticas (<code>sRobot</code>, <code>sPantalla</code>…). Cada solución clásica se acompaña de su
+      traducción a C++ moderno (<code>std::counting_semaphore</code>, <code>std::jthread</code>, colas con
+      <code>std::mutex</code> y <code>std::condition_variable</code>).</p>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

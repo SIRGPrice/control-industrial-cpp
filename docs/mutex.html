@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mutex y candados RAII · C++ Concurrente</title>
+  <meta name="description" content="std::mutex, lock_guard, unique_lock y scoped_lock para proteger regiones críticas: la tabla de un almacén vertical, una pantalla compartida y el robot de una célula.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="mutex">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Fundamentos</p>
+      <h1>Mutex y candados RAII</h1>
+      <p class="lead">Un mutex (exclusión mutua) es la versión moderna del semáforo binario usado como región
+      crítica: solo un hilo puede tenerlo a la vez. En el estilo clásico de SCTR se escribe
+      <code>wait(s)/signal(s)</code> con un semáforo inicializado a 1; en C++ se usa <code>std::mutex</code>
+      junto a candados RAII que no se pueden olvidar abiertos.</p>
+
+      <h2>std::mutex a mano (y por qué no)</h2>
+      <pre data-lang="cpp"><code>std::mutex mtx;
+
+mtx.lock();      // entra en la región crítica (bloquea si está ocupado)
+// ... código protegido ...
+mtx.unlock();    // sale de la región crítica</code></pre>
+      <p>Este código es frágil: si el tramo protegido lanza una excepción o tiene un <code>return</code>
+      intermedio, el <code>unlock()</code> no se ejecuta y el mutex queda cerrado para siempre (bloqueo de toda
+      la instalación). Por eso en C++ casi nunca se usa <code>lock()/unlock()</code> a mano.</p>
+
+      <h2>lock_guard: el candado automático</h2>
+      <p><code>std::lock_guard</code> toma el mutex al construirse y lo suelta al destruirse, pase lo que pase
+      (principio RAII). Su ámbito marca la región crítica:</p>
+      <pre data-lang="cpp" data-file="almacen.cpp"><code>#include &lt;mutex&gt;
+
+bool posicionesOcupadas[10] = {};      // almacén vertical compartido
+uint32_t numerosSerie[10] = {};
+std::mutex mtxAlmacen;                 // protege ambas matrices
+
+void registra(int posicion, uint32_t serie) {
+    std::lock_guard&lt;std::mutex&gt; lk(mtxAlmacen);  // entra
+    posicionesOcupadas[posicion] = true;          // región crítica:
+    numerosSerie[posicion] = serie;               // las dos escrituras juntas
+}                                                 // sale automáticamente</code></pre>
+      <p>Esto corresponde al ejercicio del almacén vertical: el elevador de entrada y el de salida consultan y
+      modifican la misma tabla; sin el mutex, uno podría leer la tabla mientras el otro la actualiza a medias.</p>
+
+      <h2>unique_lock: candado flexible</h2>
+      <p><code>std::unique_lock</code> es como <code>lock_guard</code> pero permite soltar y volver a tomar el
+      mutex manualmente, y es <strong>obligatorio con variables de condición</strong>:</p>
+      <pre data-lang="cpp"><code>std::unique_lock&lt;std::mutex&gt; lk(mtx);
+// ... trabajar protegido ...
+lk.unlock();          // suelta antes de una operación larga
+operacionLargaSinDatosCompartidos();
+lk.lock();            // vuelve a proteger
+// ... seguir ...</code></pre>
+
+      <h2>scoped_lock: varios mutex sin deadlock</h2>
+      <p>Cuando una operación necesita dos recursos (por ejemplo, mover una pieza de la prensa al CNC requiere
+      reservar ambos), <code>std::scoped_lock</code> toma los dos con un algoritmo que evita el interbloqueo:</p>
+      <pre data-lang="cpp"><code>std::mutex mtxPrensa, mtxCNC;
+
+void transfiere() {
+    std::scoped_lock lk(mtxPrensa, mtxCNC);  // toma ambos de forma segura
+    // ... mover pieza de prensa a CNC ...
+}</code></pre>
+
+      <h2>El patrón clásico: semáforo de región crítica</h2>
+      <p>En el cuaderno de ejercicios estos mutex aparecen como semáforos binarios con nombres descriptivos:
+      <code>sPantalla</code> (una única pantalla de operador), <code>sDatos</code> (datos de un regulador),
+      <code>sRobot</code> (el robot de la célula). Su traducción directa:</p>
+      <pre data-lang="cpp" data-file="pantalla.cpp"><code>// Estilo clásico                        // C++ moderno
+// semaforo sPantalla = 1;              std::mutex mtxPantalla;
+// semaforo sDatos = 1;                 std::mutex mtxDatos;
+
+void visualiza(const std::string&amp; mensaje) {
+    // wait(sPantalla);
+    std::lock_guard&lt;std::mutex&gt; lk(mtxPantalla);
+    std::cout &lt;&lt; mensaje &lt;&lt; "\n";       // la pantalla es de uno en uno
+    // signal(sPantalla);  ← implícito al salir del ámbito
+}</code></pre>
+
+      <h2>Buenas prácticas</h2>
+      <ul>
+        <li>La región crítica debe ser <strong>lo más corta posible</strong>: no hagas E/S lentas ni esperas bloqueantes dentro.</li>
+        <li>Declara el mutex <strong>junto a los datos que protege</strong>; así es obvio qué protege.</li>
+        <li>Un mutex por cada grupo de datos relacionados; no un «mutex global» que serialice toda la planta.</li>
+        <li>Si necesitas esperar una condición dentro de la región crítica, usa una
+        <a href="condvar.html">variable de condición</a>, no un bucle de consulta con el mutex tomado.</li>
+      </ul>
+
+      <div class="callout warning">
+        <div class="co-title">⚠ Cuidado</div>
+        <p>Un mutex <strong>no protege los datos por sí solo</strong>: protege a los hilos que lo usan. Si un hilo
+        accede a la tabla del almacén sin tomar <code>mtxAlmacen</code>, hay carrera igualmente. La disciplina la
+        pone el programador (o un tipo envoltorio, como la cola segura de <a href="colas.html">Colas</a>).</p>
+      </div>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

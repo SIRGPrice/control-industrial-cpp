@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lectores–escritores · C++ Concurrente</title>
+  <meta name="description" content="El patrón lectores-escritores y su aplicación industrial: tablas de configuración compartidas y pasillos de AGV con sentido único (ejercicio ej54).">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="lw">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Patrones clásicos</p>
+      <h1>Lectores–escritores</h1>
+      <p class="lead">Cuando un recurso compartido se usa de dos formas —muchos hilos solo <em>leen</em> y alguno
+      ocasionalmente <em>escribe</em>— un mutex ordinario serializa de más: los lectores podrían entrar a la vez.
+      El patrón lectores–escritores lo permite, y en planta aparece en tablas de configuración y, sorprendentemente,
+      en los pasillos de AGV.</p>
+
+      <h2>El patrón básico</h2>
+      <ul>
+        <li>Cualquier número de lectores puede estar dentro a la vez.</li>
+        <li>Un escritor necesita el recurso <strong>en exclusiva</strong>.</li>
+        <li>Se lleva la cuenta de lectores dentro; el primero reserva el recurso y el último lo libera.</li>
+      </ul>
+      <pre data-lang="cpp" data-file="lectores_escritores.cpp"><code>Semaforo sRecurso(1);      // el recurso en sí
+Semaforo sLectores(1);     // protege el contador de lectores
+int nLectores = 0;
+
+void lector() {
+    sLectores.wait();
+    nLectores++;
+    if (nLectores == 1) sRecurso.wait();   // el primer lector reserva
+    sLectores.signal();
+
+    leer();                                // varios lectores a la vez
+
+    sLectores.wait();
+    nLectores--;
+    if (nLectores == 0) sRecurso.signal(); // el último libera
+    sLectores.signal();
+}
+
+void escritor() {
+    sRecurso.wait();                       // exclusividad total
+    escribir();
+    sRecurso.signal();
+}</code></pre>
+      <p>Aplicación directa: los parámetros de cinco reguladores PI que llegan por el canal de comunicaciones
+      (escritor) mientras los hilos de control los leen cada período de muestreo (lectores).</p>
+
+      <h2>El pasillo de AGV: lectores–escritores físico</h2>
+      <p>Del cuaderno SCTR (ej54): diez AGV transportan paquetes entre dos almacenes unidos por un pasillo
+      estrecho. Pueden entrar varios AGV a la vez <strong>si todos van en el mismo sentido</strong>; los del sentido
+      contrario deben esperar a que el pasillo quede vacío. Es el patrón con dos «bandos»:</p>
+      <pre data-lang="cpp" data-file="pasillo.cpp"><code>Semaforo sIda(1), sVuelta(1);   // protegen sus contadores
+Semaforo sPasillo(1);           // el pasillo en sí
+int nIda = 0, nVuelta = 0;      // AGV en cada sentido
+
+void cruza(int sentido, int agv) {
+    if (sentido == IDA) {
+        sIda.wait();
+        if (nIda == 0) sPasillo.wait();   // el primero reserva el pasillo
+        nIda++;
+        sIda.signal();
+
+        cruzaPasillo(1, 2, agv);          // varios pueden ir a la vez
+
+        sIda.wait();
+        nIda--;
+        if (nIda == 0) sPasillo.signal(); // el último lo libera
+        sIda.signal();
+    } else {
+        // simétrico con sVuelta y nVuelta
+    }
+}</code></pre>
+      <p>El mismo esqueleto sirve para: grúas que comparten carril, tuberías con fluidos incompatibles, tramos de
+      vía única, etc.</p>
+
+      <h2>Inanición y variantes</h2>
+      <p>Con la versión anterior, una corriente continua de lectores (o de AGV en un sentido) puede dejar esperando
+      indefinidamente al escritor (o al otro sentido). Soluciones:</p>
+      <ul>
+        <li><strong>Preferencia al escritor</strong>: los lectores nuevos esperan si hay un escritor aguardando.</li>
+        <li><strong>Turnos por antigüedad</strong>: cola FIFO de peticiones; quien llegó antes pasa antes.</li>
+        <li>En C++ moderno, <code>std::shared_mutex</code> ofrece exactamente esta semántica:
+        <code>std::shared_lock</code> para lectores y <code>std::unique_lock</code> para escritores.</li>
+      </ul>
+      <pre data-lang="cpp"><code>#include &lt;shared_mutex&gt;
+
+std::shared_mutex mtxConfig;
+
+double leeConsigna(int regulador) {
+    std::shared_lock lk(mtxConfig);       // varios lectores a la vez
+    return consigna[regulador];
+}
+
+void escribeConsigna(int regulador, double v) {
+    std::unique_lock lk(mtxConfig);       // escritor en exclusiva
+    consigna[regulador] = v;
+}</code></pre>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

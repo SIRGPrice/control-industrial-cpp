@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ejercicios resueltos · C++ Concurrente</title>
+  <meta name="description" content="Instalaciones industriales resueltas paso a paso en el estilo clásico de semáforos sp/sc: buffer limitado, célula FMS, cadena de máquinas, cuba electrolítica y transfer.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="ejercicios">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Referencia</p>
+      <h1>Ejercicios resueltos</h1>
+      <p class="lead">Cinco instalaciones completas resueltas en el estilo clásico de los ejercicios de sistemas de
+      tiempo real: un hilo por dispositivo, parejas <code>sp*</code>/<code>sc*</code> en cada junta y regiones
+      críticas explícitas. Intenta resolver cada uno por tu cuenta antes de mirar la solución.</p>
+
+      <h2>Ejercicio 1 · Buffer limitado de envasado</h2>
+      <p><strong>Enunciado.</strong> Una llenadora produce botellas que deposita en un buffer de 4 posiciones; una
+      empaquetadora las retira. Ni llenar ni empaquetar pueden simultanearse sobre la misma posición, y la llenadora
+      no puede depositar si el buffer está lleno.</p>
+      <details>
+        <summary>Ver solución</summary>
+      <pre data-lang="cpp"><code>semaforo sHuecos = 4;     // posiciones libres
+semaforo sBotellas = 0;   // botellas llenas
+semaforo sMutex = 1;      // protege la cola
+
+void hLlenadora() {
+    while (1) {
+        Botella b = llenarBotella();
+        wait(sHuecos);
+        wait(sMutex);
+        buffer.push(b);
+        signal(sMutex);
+        signal(sBotellas);
+    }
+}
+
+void hEmpaquetadora() {
+    while (1) {
+        wait(sBotellas);
+        wait(sMutex);
+        Botella b = buffer.pop();
+        signal(sMutex);
+        signal(sHuecos);
+        empaquetar(b);
+    }
+}</code></pre>
+      <p><strong>Nota.</strong> El orden <code>wait(sHuecos)</code> antes de <code>wait(sMutex)</code> es obligatorio:
+      si se tomara el mutex primero y luego se esperara hueco, la empaquetadora no podría entrar a vaciar
+      (deadlock). Se puede ejecutar en el <a href="../labs/envasado.html">laboratorio de envasado</a>.</p>
+      </details>
+
+      <h2>Ejercicio 2 · Célula FMS: prensa, CNC y robot</h2>
+      <p><strong>Enunciado.</strong> Las piezas llegan a una posición de entrada; deben estamparse en la prensa y
+      mecanizarse en el CNC, en ese orden, y salir por la posición de salida. Cada posición admite una pieza y el
+      robot mueve piezas entre posiciones (región crítica).</p>
+      <details>
+        <summary>Ver solución</summary>
+      <pre data-lang="cpp"><code>semaforo spEntradaPrensa = 1, scEntradaPrensa = 0;
+semaforo spPrensaCNC = 1,     scPrensaCNC = 0;
+semaforo spCNCSalida = 1,     scCNCSalida = 0;
+semaforo sRobot = 1;          // región crítica
+
+void hEntrada() {
+    while (1) {
+        while (!barrera_entrada());      // espera pieza
+        wait(spEntradaPrensa);           // hueco en la prensa
+        wait(sRobot);
+        coge(100, 0);  deja(0, 100);     // entrada → prensa
+        signal(sRobot);
+        signal(scEntradaPrensa);         // avisa a la prensa
+    }
+}
+
+void hPrensa() {
+    while (1) {
+        wait(scEntradaPrensa);
+        estampa();
+        wait(spPrensaCNC);               // hueco en el CNC
+        wait(sRobot);
+        coge(0, 100);  deja(-100, 0);    // prensa → CNC
+        signal(sRobot);
+        signal(spEntradaPrensa);         // libera la prensa
+        signal(scPrensaCNC);             // avisa al CNC
+    }
+}
+
+void hCNC() {
+    while (1) {
+        wait(scPrensaCNC);
+        mecaniza();
+        wait(spCNCSalida);               // hueco en la salida
+        wait(sRobot);
+        coge(-100, 0);  deja(0, -100);   // CNC → salida
+        signal(sRobot);
+        signal(spPrensaCNC);             // libera el CNC
+        signal(scCNCSalida);             // avisa a la salida
+    }
+}
+
+void hSalida() {
+    while (1) {
+        wait(scCNCSalida);
+        while (barrera_salida());        // espera a que retiren la pieza
+        signal(spCNCSalida);             // la salida queda libre
+    }
+}</code></pre>
+      <p><strong>Nota.</strong> La misma solución vale con un solo semáforo <code>sp</code>/<code>sc</code> si se
+      integran entrada y salida en los hilos de prensa y CNC. En
+      <a href="../labs/fms.html">el laboratorio</a> puedes verla ejecutándose línea a línea.</p>
+      </details>
+
+      <h2>Ejercicio 3 · Cadena de tres máquinas con cintas</h2>
+      <p><strong>Enunciado.</strong> Tres máquinas M0, M1 y M2 mecanizan en cadena las piezas que llegan por la cinta
+      C0. Entre máquinas hay cintas C1 y C2, y de la última sale la cinta C3. Ninguna cinta admite más de una pieza;
+      al final de cada cinta hay una barrera que detecta la llegada. Si una máquina falla, la pieza se rechaza a su
+      contenedor.</p>
+      <details>
+        <summary>Ver solución (simplificada)</summary>
+      <pre data-lang="cpp"><code>semaforo sCintaP[3] = {1, 1, 1};   // cintas productoras (0, 1, 2)
+semaforo sMaquinaC[3] = {0, 0, 0}; // consumidoras de cinta (máquinas)
+semaforo sMaquinaP[3] = {1, 1, 1}; // productoras de pieza (máquinas)
+semaforo sCintaC[3] = {0, 0, 0};   // cintas consumidoras (1, 2, 3)
+
+void hCinta0() {                   // de la entrada a M0
+    while (1) {
+        cinta(0, 0);
+        wait(sCintaP[0]);          // espera cinta vacía
+        while (!barrera(0));       // espera pieza depositada
+        cinta(0, 1);               // en marcha
+        while (!barrera(1));       // hasta la barrera de M0
+        cinta(0, 0);
+        signal(sMaquinaC[0]);      // avisa a M0
+    }
+}
+
+void hMaquina(int m) {
+    while (1) {
+        wait(sMaquinaC[m]);        // espera pieza en su cinta
+        entrada(m);                // recoge la pieza
+        signal(sCintaP[m]);        // la cinta queda libre
+        if (procesado(m)) {        // sin error
+            wait(sMaquinaP[m]);    // espera cinta de salida libre
+            salida(m);             // deja la pieza
+            signal(sCintaC[m]);    // avisa a la siguiente cinta
+        } else {
+            rechazo(m);            // pieza al contenedor de defectuosos
+        }
+    }
+}
+
+void hCinta(int c) {               // cintas 1 y 2
+    while (1) {
+        cinta(c, 0);
+        wait(sCintaP[c]);          // hueco en la cinta
+        wait(sCintaC[c - 1]);      // pieza de la máquina anterior
+        cinta(c, 1);
+        while (!barrera(c + 1));
+        cinta(c, 0);
+        signal(sMaquinaC[c]);      // avisa a la siguiente máquina
+        signal(sMaquinaP[c - 1]);  // libera a la máquina anterior
+    }
+}</code></pre>
+      <p><strong>Nota.</strong> Cada cinta combina dos parejas sp/sc: como consumidora de la máquina anterior y como
+      productora de la siguiente. Esta es la estructura general de cualquier línea con transportes intermedios.</p>
+      </details>
+
+      <h2>Ejercicio 4 · La cuba electrolítica con 8 robots</h2>
+      <p><strong>Enunciado.</strong> Ocho robots alrededor de una cuba tratan piezas. Ningún robot puede acercarse a
+      la cuba si el robot de su izquierda o el de su derecha está en ella; alrededor caben como mucho 7. Cada robot
+      tiene su mesa de carga y su contenedor de piezas tratadas.</p>
+      <details>
+        <summary>Ver solución</summary>
+      <pre data-lang="cpp"><code>semaforo sRobot[8] = {1,1,1,1,1,1,1,1};  // permiso de cada robot
+semaforo sCuba = 7;                        // plazas junto a la cuba
+
+void hRobot(int n) {
+    int izquierdo = (n + 7) % 8;           // el robot a su izquierda
+    while (1) {
+        while (!piezaEnMesa(n));           // espera pieza en su mesa
+        baja(n);  cierra(n);  sube(n);     // coge la pieza
+        wait(sCuba);                       // plaza junto a la cuba
+        wait(sRobot[n]);
+        wait(sRobot[izquierdo]);           // ni yo ni mi izquierdo…
+        // …tampoco mi derecho: él esperará a mi semáforo
+        mueveteACuba(n);
+        baja(n);  abre(n);  sube(n);       // deposita en la cuba
+        mueveteAMesa(n);
+        signal(sRobot[n]);
+        signal(sRobot[izquierdo]);
+        signal(sCuba);
+        sleep(10000);                      // tratamiento electrolítico
+        wait(sCuba);
+        wait(sRobot[n]);
+        wait(sRobot[izquierdo]);
+        mueveteACuba(n);
+        baja(n);  cierra(n);  sube(n);     // recoge su pieza
+        mueveteAContenedor(n);
+        signal(sRobot[n]);
+        signal(sRobot[izquierdo]);
+        signal(sCuba);
+        baja(n);  abre(n);  sube(n);
+        mueveteAMesa(n);
+    }
+}</code></pre>
+      <p><strong>Nota.</strong> La restricción «ni el de mi izquierda ni el de mi derecha» se codifica pidiendo el
+      permiso propio y el del vecino izquierdo; el vecino derecho, por simetría, pide el mío. El semáforo contador
+      <code>sCuba</code> limita a 7 los robots en la zona.</p>
+      </details>
+
+      <h2>Ejercicio 5 · Máquina con sistema transfer</h2>
+      <p><strong>Enunciado.</strong> Una máquina tiene cinco posiciones de mecanizado en línea, la entrada en la
+      posición 0 y la salida en la 6. Un único transfer neumático mueve piezas entre posiciones adyacentes (una a la
+      vez). Debe poder haber varias posiciones mecanizando simultáneamente piezas distintas.</p>
+      <details>
+        <summary>Ver solución</summary>
+      <pre data-lang="cpp"><code>semaforo sc[5] = {0,0,0,0,0};    // aviso de pieza a la posición i
+semaforo sp[5] = {1,1,1,1,1};    // hueco en la posición i (para la anterior)
+semaforo sTransfer = 1;          // el transfer es región crítica
+
+void hPosicion(int n) {          // un hilo por posición (0 a 5)
+    while (1) {
+        if (n == 0)
+            while (!entrada());  // espera pieza en la entrada
+        else
+            wait(sc[n - 1]);     // espera pieza de la posición anterior
+        if (n > 0) mecaniza(n);  // mecaniza (si no es la entrada)
+        if (n < 5)
+            wait(sp[n]);         // espera hueco en la siguiente
+        else
+            while (salida());    // espera que la salida se vacíe
+        wait(sTransfer);         // reserva el transfer
+        transfiere(n, n + 1);    // mueve la pieza
+        signal(sTransfer);       // libera el transfer
+        if (n < 5) signal(sc[n]);      // avisa a la siguiente posición
+        if (n > 0) signal(sp[n - 1]);  // libera la anterior
+    }
+}</code></pre>
+      <p><strong>Nota.</strong> Es el mismo esqueleto del pipeline, con la peculiaridad de que todas las etapas
+      comparten un único transfer: por eso <code>sTransfer</code> envuelve solo el movimiento, dejando que los
+      mecanizados se solapen. El código de cada posición es idéntico salvo los extremos: la entrada produce el
+      primer <code>sc</code> y la salida consume el último.</p>
+      </details>
+
+      <h2>Cómo seguir practicando</h2>
+      <ul>
+        <li>Escribe las soluciones antes de abrir cada <code>&lt;details&gt;</code>.</li>
+        <li>Valida tus respuestas en los <a href="../labs/fms.html">laboratorios</a> cuando coincidan con sus patrones.</li>
+        <li>Comprueba siempre las invariantes del <a href="../docs/planta-diseno.html">diseño paso a paso</a>:
+        deadlocks, capacidades y señales perdidas.</li>
+      </ul>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

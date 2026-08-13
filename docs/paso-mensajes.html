@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paso de mensajes · C++ Concurrente</title>
+  <meta name="description" content="Diseño de plantas por paso de mensajes: tipos de mensaje, colas de órdenes y de eventos, y la comparación con memoria compartida.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="mensajes">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Colas</p>
+      <h1>Paso de mensajes</h1>
+      <p class="lead">Hay dos filosofías para comunicar hilos: compartir variables (protegidas con semáforos o
+      mutex) o pasarse mensajes por colas. En plantas grandes el paso de mensajes produce diseños más limpios:
+      cada estación es una caja que recibe órdenes y emite eventos, y las colas son las cintas virtuales que las
+      unen.</p>
+
+      <h2>Memoria compartida frente a mensajes</h2>
+      <table>
+        <tr><th></th><th>Memoria compartida + semáforos</th><th>Paso de mensajes (colas)</th></tr>
+        <tr><td>Acoplamiento</td><td>Los hilos conocen las variables de otros</td><td>Solo conocen el tipo de mensaje</td></tr>
+        <tr><td>Sincronización</td><td>Explícita y propensa a errores</td><td>Implícita: el push/pop ya bloquea</td></tr>
+        <tr><td>Trazabilidad</td><td>Hay que instrumentar las variables</td><td>El registro de la cola ES la traza</td></tr>
+        <tr><td>Ideal para</td><td>Señales simples, recursos únicos, contadores</td><td>Flujos de trabajo, piezas, órdenes, telemetría</td></tr>
+      </table>
+      <p>En la práctica se mezclan: semáforos para los recursos físicos únicos (el robot, el horno) y colas para
+      el flujo de piezas y mensajes.</p>
+
+      <h2>Diseño de mensajes</h2>
+      <p>Un mensaje es un valor que viaja entero de un hilo a otro: una vez enviado, el emisor no lo toca. En
+      planta suelen ser structs pequeños con <code>std::variant</code> para las uniones de tipos:</p>
+      <pre data-lang="cpp" data-file="mensajes.hpp"><code>#include &lt;cstdint&gt;
+#include &lt;variant&gt;
+#include &lt;string&gt;
+
+struct Pieza {
+    uint32_t serie;          // número de serie (lector de códigos)
+    int prioridad;           // 0 = normal, 1 = urgente
+};
+
+struct Alarma {
+    int codigo;              // p. ej. 14 = sobrecalentamiento M2
+    std::string texto;
+};
+
+struct Orden {
+    enum class Tipo { Arrancar, Parar, CambiarConsigna };
+    Tipo tipo;
+    double valor;            // consigna nueva si procede
+};
+
+// El buzón de una estación acepta varios tipos:
+using Mensaje = std::variant&lt;Pieza, Alarma, Orden&gt;;</code></pre>
+
+      <h2>Los tres buzones típicos de una estación</h2>
+      <ul>
+        <li><strong>Cola de entrada de piezas</strong> (<code>ColaBloqueante&lt;Pieza&gt;</code>): lo que la estación
+        anterior le entrega.</li>
+        <li><strong>Cola de telemetría/eventos</strong> hacia el supervisor: fin de pieza, avería, contadores.</li>
+        <li><strong>Cola de órdenes</strong> desde el operador/SCADA: arrancar, parar, cambiar consigna.</li>
+      </ul>
+      <pre data-lang="cpp" data-file="estacion.cpp"><code>ColaBloqueante&lt;Pieza&gt;  colaEntrada(4);   // piezas desde la estación anterior
+ColaBloqueante&lt;Evento&gt; colaEventos(32);  // hacia el supervisor
+ColaBloqueante&lt;Orden&gt;  colaOrdenes(8);   // desde el operador
+
+void hEstacion(std::stop_token parada) {
+    while (!parada.stop_requested()) {
+        Orden orden;
+        if (colaOrdenes.popDurante(orden, std::chrono::milliseconds(200))) {
+            atenderOrden(orden);          // primero, las órdenes del operador
+            continue;
+        }
+        Pieza p;
+        if (colaEntrada.popDurante(p, std::chrono::milliseconds(200))) {
+            procesar(p);
+            colaEventos.push({Evento::Tipo::PiezaTerminada, p.serie});
+        }
+    }
+}</code></pre>
+      <div class="callout note">
+        <div class="co-title">📘 Nota</div>
+        <p><code>popDurante</code> (pop con timeout, visto en <a href="colas.html">Colas</a>) es lo que permite a un
+        hilo atender <em>varias</em> colas sin quedarse dormido para siempre en una de ellas: espera un poco en
+        cada una por turnos.</p>
+      </div>
+
+      <h2>Jerarquía de mensajes en una planta</h2>
+      <p>El patrón resultante es un árbol: los hilos de estación hablan entre sí por colas de piezas, y todos
+      informan hacia arriba al supervisor por colas de eventos, recibiendo órdenes por sus colas de órdenes. En
+      <a href="planta-arquitectura.html">Arquitectura de control</a> se desarrolla el esquema completo, y el
+      <a href="../labs/cadena.html">laboratorio de colas</a> muestra un supervisor consumiendo telemetría en vivo.</p>
+
+      <h2>Reglas prácticas</h2>
+      <ul>
+        <li>Los mensajes se pasan <strong>por valor</strong> (o <code>std::move</code>): nada de punteros a memoria del emisor.</li>
+        <li>Mensajes pequeños y autodescriptivos: serie, tipo, marca de tiempo.</li>
+        <li>Una cola por relación emisor–receptor; si dos estaciones necesitan prioridad, dos colas con un
+        <code>try_pop</code> primero sobre la urgente.</li>
+        <li>Las colas de eventos hacia el supervisor deben ser de capacidad generosa: una avería puede generar
+        ráfagas.</li>
+      </ul>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

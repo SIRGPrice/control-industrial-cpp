@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arquitectura de control · C++ Concurrente</title>
+  <meta name="description" content="Cómo traducir una instalación industrial en una arquitectura de hilos: un hilo por dispositivo, semáforos para recursos y colas para el flujo de piezas y mensajes.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="arq">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Control de planta</p>
+      <h1>Arquitectura de control</h1>
+      <p class="lead">Una instalación bien diseñada se lee como su diagrama de flujo: cada estación es un hilo, cada
+      recurso único es un semáforo de valor 1, cada buffer es una pareja sp/sc o una cola, y por encima hay un hilo
+      supervisor con el que habla el operador. Esta página fija el modelo de referencia.</p>
+
+      <h2>El modelo de componentes</h2>
+      <table>
+        <tr><th>Elemento físico</th><th>Elemento de software</th></tr>
+        <tr><td>Estación o máquina (prensa, CNC, dosificador…)</td><td>Un hilo con su bucle de trabajo</td></tr>
+        <tr><td>Dispositivo de transporte (robot, grúa, carro, transfer)</td><td>Región crítica: semáforo binario / mutex</td></tr>
+        <tr><td>Buffer, pulmón, tramo de cinta con capacidad</td><td>Cola bloqueante o pareja sp/sc con capacidad = posiciones físicas</td></tr>
+        <tr><td>Sensor / actuador de E/S</td><td>Funciones de la capa hardware llamadas por el hilo dueño del dispositivo</td></tr>
+        <tr><td>Operador, HMI, SCADA</td><td>Hilo de comunicaciones + colas de órdenes/respuestas</td></tr>
+        <tr><td>Alarmas y diagnóstico</td><td>Cola de eventos hacia el hilo supervisor</td></tr>
+      </table>
+
+      <h2>El esquema de una célula tipo</h2>
+      <pre data-lang="text"><code>                    ┌──────────────┐
+     órdenes ─────▶ │  SUPERVISOR  │ ◀───── cola de eventos/alarmas
+                    └──────┬───────┘
+                           │ órdenes (colas por estación)
+   ┌────────┐  cola1  ┌────▼───┐  cola2  ┌────────┐  cola3  ┌────────┐
+   │ENTRADA ├────────▶│   M1   ├────────▶│   M2   ├────────▶│ SALIDA │
+   └────────┘         └────────┘         └────────┘         └────────┘
+       hilo            hilo               hilo                hilo
+                          └───────┬───────┘
+                            sRobot = 1   ← recurso compartido</code></pre>
+      <p>Todo el comportamiento dinámico de la planta emerge de tres reglas:</p>
+      <ol>
+        <li>Un hilo solo avanza si tiene <strong>material</strong> (su cola de entrada no está vacía o su semáforo sc &gt; 0).</li>
+        <li>Un hilo solo suelta si tiene <strong>hueco</strong> (la cola de destino no está llena o su semáforo sp &gt; 0).</li>
+        <li>Un <strong>recurso físico único</strong> se pide antes de usarlo y se libera inmediatamente después.</li>
+      </ol>
+
+      <h2>Capas del software</h2>
+      <ul>
+        <li><strong>Capa hardware</strong>: funciones que leen sensores y escriben actuadores
+        (<code>leeBit</code>, <code>cinta(…)</code>, <code>salidaAnalogica(…)</code>). Sin lógica.</li>
+        <li><strong>Capa de estación</strong>: un hilo por dispositivo; lógica de esa estación y llamadas a la capa hardware.</li>
+        <li><strong>Capa de coordinación</strong>: semáforos, colas y mutex que conectan estaciones.</li>
+        <li><strong>Capa de supervisión</strong>: hilo supervisor, HMI, registro de alarmas, órdenes de parada.</li>
+      </ul>
+      <p>La regla de dependencia: cada capa solo llama a la inmediatamente inferior. Un hilo de estación nunca
+      toca las variables de otra estación: se comunican por la capa de coordinación.</p>
+
+      <h2>Propiedades que se obtienen</h2>
+      <ul>
+        <li><strong>Modularidad</strong>: añadir una etapa es añadir un hilo y dos colas.</li>
+        <li><strong>Autoregulación</strong>: las capacidades físicas limitan el flujo; nada explota por producir de más.</li>
+        <li><strong>Observabilidad</strong>: los valores de semáforos y colas son el estado de la planta; el supervisor los publica al HMI.</li>
+        <li><strong>Depurabilidad</strong>: cada bloqueo tiene un nombre (<code>wait(sRobot)</code>) que explica por qué la estación está parada.</li>
+      </ul>
+
+      <div class="callout tip">
+        <div class="co-title">💡 Ejemplo completo</div>
+        <p>La <a href="../labs/fms.html">célula FMS</a> y la <a href="../labs/cadena.html">línea de mecanizado</a>
+        de los laboratorios aplican este modelo con cuatro y seis hilos respectivamente; el código fuente de cada
+        simulación es la mejor plantilla para empezar.</p>
+      </div>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

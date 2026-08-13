@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Errores comunes · C++ Concurrente</title>
+  <meta name="description" content="Los fallos más frecuentes en programación concurrente de planta: señales perdidas, deadlocks, busy-wait, wait sin predicado y cómo evitarlos.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="errores">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Referencia</p>
+      <h1>Errores comunes</h1>
+      <p class="lead">Siete fallos que aparecen una y otra vez en el control concurrente de instalaciones. Cada uno
+      con su síntoma, su causa y la regla que lo evita.</p>
+
+      <h2>1 · La señal perdida</h2>
+      <p><strong>Síntoma:</strong> un hilo se queda bloqueado para siempre en un <code>wait</code>, sin motivo aparente.</p>
+      <p><strong>Causa:</strong> el productor hace <code>signal</code> <em>antes</em> de que el consumidor llegue al
+      <code>wait</code>. Si el semáforo está inicializado a 0, ese signal se «guarda»… pero si el código usa una
+      condición booleana con un mutex mal ordenado, el aviso puede perderse.</p>
+      <p><strong>Regla:</strong> con variables de condición, cambia la condición <em>bajo el mutex</em> y notifica
+      <em>después</em>; el que espera usa siempre predicado (ver <a href="../docs/condvar.html">Variables de
+      condición</a>). Con semáforos, inicialízalos a 0 si el evento aún no ha ocurrido.</p>
+
+      <h2>2 · wait sin predicado</h2>
+      <pre data-lang="cpp"><code>// MAL: puede volver sin que la condición se cumpla (despertar espurio)
+cv.wait(lk);
+
+// BIEN: el predicado se comprueba antes, después y en cada despertar
+cv.wait(lk, [] { return piezaLista; });</code></pre>
+      <p><strong>Regla:</strong> <code>wait</code> con predicado siempre, o verifica la condición en bucle.</p>
+
+      <h2>3 · Deadlock por orden de los wait</h2>
+      <p><strong>Síntoma:</strong> la planta se congela; ningún hilo avanza (el laboratorio lo marca como
+      <em>INTERBLOQUEO</em>).</p>
+      <pre data-lang="cpp"><code>// hilo A                                    // hilo B
+sMutex.wait();                               sRobot.wait();
+sRobot.wait();   // nunca podrá              sMutex.wait();   // nunca podrá</code></pre>
+      <p><strong>Regla:</strong> todos los hilos piden los recursos en el <strong>mismo orden</strong>, o usa
+      <code>std::scoped_lock</code>. En semáforos: primero el recurso «aguas arriba», luego el «aguas abajo», nunca
+      dentro de una región crítica esperar por otro permiso que otro pueda estar reteniendo.</p>
+
+      <h2>4 · Busy-wait en vez de bloqueo</h2>
+      <p><strong>Síntoma:</strong> la CPU está al 100 % con la planta parada; el hilo se traga un núcleo consultando
+      un sensor o una variable.</p>
+      <pre data-lang="cpp"><code>// MAL: el hilo quema CPU consultando en bucle
+while (!piezaLista) {}
+
+// BIEN: bloquea hasta que llegue la señal
+sLista.wait();</code></pre>
+      <p><strong>Regla:</strong> toda espera de duración impredecible se hace con semáforo, condición o cola
+      bloqueante; el sondeo solo se acepta en lecturas de hardware de tiempo real de corta duración.</p>
+
+      <h2>5 · El mutex que no protege</h2>
+      <p><strong>Síntoma:</strong> carreras y valores incoherentes a pesar de usar mutex.</p>
+      <p><strong>Causa:</strong> algún hilo accede a los datos compartidos <em>sin</em> tomar el mutex, o el mutex
+      protege solo una parte del grupo de datos (por ejemplo, la tabla de posiciones pero no el contador asociado).</p>
+      <p><strong>Regla:</strong> encapsula los datos en un tipo (la <code>ColaBloqueante</code> es el ejemplo): el
+      mutex y los datos viajan juntos y no hay forma de olvidarlo.</p>
+
+      <h2>6 · Mantener candado durante una espera larga</h2>
+      <p><strong>Síntoma:</strong> toda la instalación se ralentiza; los hilos se encolan en un mutex que uno de ellos
+      retiene mientras hace E/S o espera por otro recurso.</p>
+      <p><strong>Regla:</strong> región crítica mínima: copia los datos que necesites, suelta, y trabaja fuera.
+      Nunca hagas <code>sleep_for</code> ni esperes un semáforo dentro de una región crítica.</p>
+
+      <h2>7 · join olvidado (y el hilo suicida)</h2>
+      <p><strong>Síntoma:</strong> el programa aborta con <code>terminate</code> al salir de <code>main</code>, o un
+      hilo que referencia variables que ya se destruyeron (uso de memoria liberada).</p>
+      <p><strong>Regla:</strong> usa <code>std::jthread</code> y que los hilos se unan solos; los datos que un hilo
+      toca deben vivir más que el hilo (declarados antes, destruidos después del <code>join</code>).</p>
+
+      <h2>Tabla-resumen</h2>
+      <table>
+        <tr><th>Error</th><th>Cómo detectarlo</th><th>Cómo evitarlo</th></tr>
+        <tr><td>Señal perdida</td><td>Hilo bloqueado indefinidamente</td><td>Predicado + condición bajo mutex</td></tr>
+        <tr><td>wait sin predicado</td><td>Despertares espurios, fallos intermitentes</td><td><code>wait(lk, pred)</code></td></tr>
+        <tr><td>Deadlock</td><td>Congelación total</td><td>Orden fijo, scoped_lock</td></tr>
+        <tr><td>Busy-wait</td><td>CPU al 100 % parado</td><td>Semáforo / condición / cola</td></tr>
+        <tr><td>Mutex «parcial»</td><td>Carreras persistentes</td><td>Encapsular datos</td></tr>
+        <tr><td>Candado largo</td><td>Línea ralentizada</td><td>Región crítica mínima</td></tr>
+        <tr><td>join olvidado</td><td>Abortos, uso de memoria liberada</td><td>std::jthread</td></tr>
+      </table>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Supervisión, alarmas y parada · C++ Concurrente</title>
+  <meta name="description" content="El hilo supervisor, la cola de alarmas, los timeouts como watchdog y la parada ordenada de una instalación con std::jthread y stop_token.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="super">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Control de planta</p>
+      <h1>Supervisión, alarmas y parada</h1>
+      <p class="lead">Una instalación no solo produce: avisa, registra, obedece al operador y se detiene de forma
+      segura. Todo eso lo organiza un hilo supervisor alimentado por colas de eventos y órdenes, con timeouts que
+      convierten los bloqueos en diagnósticos.</p>
+
+      <h2>El hilo supervisor</h2>
+      <p>Su trabajo: consumir la cola de eventos de todas las estaciones, mantener los KPI, alimentar el HMI y
+      atender la cola de órdenes del operador. Como debe vigilar varias colas, usa <code>popDurante</code> (pop con
+      timeout) por turnos:</p>
+      <pre data-lang="cpp" data-file="supervisor.cpp"><code>struct Evento { int estacion, codigo; uint32_t serie; };
+struct Orden  { enum class Tipo { Parar, Arrancar }; Orden::Tipo tipo; };
+
+ColaBloqueante&lt;Evento&gt; colaEventos(64);
+ColaBloqueante&lt;Orden&gt;  colaOrdenes(8);
+std::atomic&lt;bool&gt; enMarcha{true};
+
+void hSupervisor() {
+    while (true) {
+        Orden orden;
+        if (colaOrdenes.popDurante(orden, std::chrono::milliseconds(100))) {
+            if (orden.tipo == Orden::Tipo::Parar) { enMarcha = false; /* ver parada */ }
+            else                                  { enMarcha = true; }
+            continue;
+        }
+        Evento e;
+        if (colaEventos.popDurante(e, std::chrono::milliseconds(100))) {
+            registrarEnHistorico(e);
+            actualizarHMI(e);
+            if (esAlarma(e.codigo)) activarSirena();
+        }
+        refrescarKPIs();               // cada vuelta, aunque no haya mensajes
+    }
+}</code></pre>
+      <p>Cada estación informa con un <code>push</code> al terminar una pieza o detectar una avería:</p>
+      <pre data-lang="cpp"><code>// dentro de hMaquina2:
+if (!mecaniza(p))
+    colaEventos.push({2, CODIGO_AVERIA, p.serie});</code></pre>
+
+      <h2>Timeouts: el watchdog de cada espera</h2>
+      <p>Un <code>wait</code> eterno es un sensor roto disfrazado de normalidad. En una instalación seria, las
+      esperas críticas llevan límite de tiempo y plan de avería:</p>
+      <pre data-lang="cpp"><code>// la pieza debía llegar a la prensa en menos de 10 s
+if (!spEntradaPrensa.try_acquire_for(std::chrono::seconds(10))) {
+    colaEventos.push({PRENSA, CODIGO_ATASCO, 0});
+    entrarEnModoSeguro();
+}</code></pre>
+      <p>Lo mismo aplica a <code>condition_variable::wait_for</code> y a las comunicaciones
+      (<code>recibe</code> con timeout). El patrón: <strong>espera acotada → diagnóstico → modo seguro</strong>.</p>
+
+      <h2>Parada ordenada con jthread</h2>
+      <p>La parada de planta no puede ser un <code>exit()</code>: los robots deben terminar su movimiento y los
+      actuadores quedar en estado seguro. El mecanismo estándar es <code>std::stop_token</code>:</p>
+      <pre data-lang="cpp" data-file="parada.cpp"><code>void hMaquina(std::stop_token parada, int n) {
+    while (!parada.stop_requested()) {        // condición de parada
+        Pieza p;
+        if (!colaEntrada.popDurante(p, std::chrono::milliseconds(200)))
+            continue;                          // timeout → vuelve a mirar la parada
+        procesar(p);
+    }
+    apagarActuadores(n);                       // SALIDA SEGURA
+}
+
+int main() {
+    std::jthread m1(hMaquina, 1), m2(hMaquina, 2), m3(hMaquina, 3);
+    std::jthread sup(hSupervisor);
+
+    esperarOrdenDeParada();                    // pulsador, HMI, emergencia…
+
+    m1.request_stop();  m2.request_stop();  m3.request_stop();
+    sup.request_stop();                        // los jthread hacen join al destruirse
+}</code></pre>
+      <div class="callout note">
+        <div class="co-title">📘 Nota</div>
+        <p>El timeout del <code>popDurante</code> es lo que hace responsive la parada: sin él, un hilo dormido en
+        una cola vacía no vería el <code>stop_token</code> hasta recibir datos. Alternativa C++20: registrar un
+        <code>std::stop_callback</code> que haga <code>notify_all()</code> sobre la condición de la cola.</p>
+      </div>
+
+      <h2>Jerarquía de paradas</h2>
+      <table>
+        <tr><th>Nivel</th><th>Origen</th><th>Acción</th></tr>
+        <tr><td>Parada de ciclo</td><td>Operador / fin de lote</td><td>No entrar piezas nuevas; dejar terminar las que están en curso.</td></tr>
+        <tr><td>Parada ordenada</td><td>Cambio de turno / mantenimiento</td><td>stop_token a todos los hilos; salidas seguras; registro.</td></tr>
+        <tr><td>Parada de emergencia</td><td>Seta / seguridad</td><td>Corte de actuadores inmediato; los hilos solo vigilan y registran.</td></tr>
+      </table>
+
+      <h2>Registro e histórico</h2>
+      <p>Todo evento con marca de tiempo (<code>std::chrono::system_clock::now()</code>) a un archivo o base de
+      datos: el histórico es la herramienta de diagnosis. Un único hilo escritor del histórico (consumidor de la
+      cola de eventos) evita contention en el disco y mantiene el orden cronológico.</p>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

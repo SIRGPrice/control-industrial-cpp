@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Riesgos del estado compartido · C++ Concurrente</title>
+  <meta name="description" content="Condiciones de carrera, atomicidad, data races, interbloqueos e inanición: los fallos que aparecen cuando varios hilos comparten datos de una instalación.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="riesgos">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Fundamentos</p>
+      <h1>Riesgos del estado compartido</h1>
+      <p class="lead">Dos hilos que tocan la misma variable sin coordinarse producen resultados que dependen del
+      azar del planificador. En una planta eso significa contadores de piezas que no cuadran, motores que se
+      activan dos veces o robots que colisionan. Estos son los fallos que hay que conocer antes de escribir la
+      primera línea de sincronización.</p>
+
+      <h2>Condición de carrera</h2>
+      <p>Dos hilos de una línea de envasado comparten el contador de cajas que faltan por llenar:</p>
+      <pre data-lang="cpp" data-file="carrera.cpp"><code>int cajasPendientes = 0;   // COMPARTIDO por dos hilos
+
+void hCintaA() {
+    // ... llega una caja ...
+    cajasPendientes = cajasPendientes + 1;   // ← no atómico
+}
+
+void hCintaB() {
+    // ... llega otra caja ...
+    cajasPendientes = cajasPendientes + 1;   // ← no atómico
+}</code></pre>
+      <p><code>x = x + 1</code> son en realidad tres pasos: <strong>leer</strong> el valor, <strong>sumar</strong> y
+      <strong>escribir</strong>. Si ambos hilos leen el mismo valor antes de que ninguno escriba, una de las cajas
+      se pierde:</p>
+      <table>
+        <tr><th>Instante</th><th>hCintaA</th><th>hCintaB</th><th>cajasPendientes</th></tr>
+        <tr><td>1</td><td>lee 0</td><td></td><td>0</td></tr>
+        <tr><td>2</td><td></td><td>lee 0</td><td>0</td></tr>
+        <tr><td>3</td><td>escribe 0+1 = 1</td><td></td><td>1</td></tr>
+        <tr><td>4</td><td></td><td>escribe 0+1 = 1</td><td>1 ← ¡deberían ser 2!</td></tr>
+      </table>
+      <p>El resultado correcto era 2; el real, 1. El fallo depende del interleaving (entrelazado) de las
+      instrucciones y por eso es tan difícil de reproducir: <em>«en las pruebas siempre funcionaba»</em>.</p>
+      <div class="callout note">
+        <div class="co-title">📘 Definición</div>
+        <p>Una <strong>región crítica</strong> es un tramo de código que accede a datos compartidos y que debe
+        ejecutarse sin que otro hilo entre en él. Todo el arte de la sincronización consiste en proteger regiones
+        críticas sin ahogar el paralelismo.</p>
+      </div>
+
+      <h2>Atomicidad</h2>
+      <p>Una operación es <strong>atómica</strong> cuando se ejecuta como un todo indivisible: ningún hilo puede
+      observar ni interrumpir un estado intermedio. <code>x++</code> no lo es en la mayoría de arquitecturas;
+      las operaciones sobre <code>std::atomic&lt;int&gt;</code> sí lo son (se estudian en
+      <a href="atomicos.html">Atómicos</a>). La otra forma de conseguir atomicidad es encerrar la región crítica
+      con un <a href="mutex.html">mutex</a>.</p>
+
+      <h2>Data race: comportamiento indefinido</h2>
+      <p>Cuando dos hilos acceden a la misma posición de memoria, al menos uno escribe, y no hay sincronización
+      entre ellos, el estándar lo llama <em>data race</em> y el programa tiene <strong>comportamiento indefinido</strong>:
+      puede dar valores erróneos, corromper estructuras o fallar solo en producción. Detectarlos a ojo es
+      imposible; para eso existen las herramientas:</p>
+      <ul>
+        <li><strong>ThreadSanitizer</strong> (<code>-fsanitize=thread</code> en GCC/Clang): avisa de data races en tiempo de ejecución.</li>
+        <li><strong>Helgrind / DRD</strong> (Valgrind): detecta carreras y mal uso de candados.</li>
+        <li><strong>Analizadores estáticos</strong> (clang-tidy, Visual Studio): encuentran patrones sospechosos sin ejecutar.</li>
+      </ul>
+      <pre data-lang="bash" data-file="compilar con sanitizers"><code># Compila con información de depuración y ThreadSanitizer
+g++ -std=c++20 -g -fsanitize=thread planta.cpp -o planta -pthread
+./planta        # el informe de carreras aparece en la consola</code></pre>
+
+      <h2>Interbloqueo (deadlock)</h2>
+      <p>Dos hilos se esperan mutuamente y ninguno puede avanzar. El ejemplo clásico con dos recursos
+      (la prensa y el robot):</p>
+      <ul>
+        <li>El hilo de la prensa toma el mutex de la <strong>prensa</strong> y pide el del <strong>robot</strong>.</li>
+        <li>El hilo de entrada toma el mutex del <strong>robot</strong> y pide el de la <strong>prensa</strong>.</li>
+        <li>Cada uno tiene lo que el otro necesita: bloqueo permanente.</li>
+      </ul>
+      <p>Reglas para evitarlo:</p>
+      <ol>
+        <li><strong>Orden fijo de adquisición</strong>: todos los hilos toman los candados en el mismo orden.</li>
+        <li><strong>std::scoped_lock</strong>: toma varios mutex de una vez con algoritmo anti-deadlock.</li>
+        <li><strong>No mantener candados mientras se espera</strong> por otro recurso bloqueante.</li>
+        <li>Usar esperas con <strong>timeout</strong> (<code>try_acquire_for</code>, <code>wait_for</code>) para detectar el problema.</li>
+      </ol>
+      <div class="callout tip">
+        <div class="co-title">💡 Pruébalo</div>
+        <p>En el <a href="../labs/fms.html">laboratorio de la célula FMS</a> el robot es región crítica: observa
+        cómo los cuatro hilos piden <code>sRobot</code> y cómo el semáforo los turna sin colisiones.</p>
+      </div>
+
+      <h2>Inanición y prioridad inversa</h2>
+      <ul>
+        <li><strong>Inanición (starvation)</strong>: un hilo nunca consigue el recurso porque otros lo acaparan.
+        Se evita con colas de espera justas (FIFO) o turnos.</li>
+        <li><strong>Inversión de prioridad</strong>: un hilo de baja prioridad retiene un mutex que necesita uno de
+        alta; en tiempo real se mitiga con herencia de prioridad o protocolos de acceso.</li>
+      </ul>
+
+      <h2>Resumen de amenazas</h2>
+      <table>
+        <tr><th>Amenaza</th><th>Síntoma</th><th>Solución</th></tr>
+        <tr><td>Condición de carrera</td><td>Resultados que dependen del orden de ejecución</td><td>Mutex, semáforos, atómicos</td></tr>
+        <tr><td>Data race</td><td>Comportamiento indefinido, corrupción</td><td>Sincronización + ThreadSanitizer</td></tr>
+        <tr><td>Deadlock</td><td>La instalación se congela</td><td>Orden fijo, scoped_lock, timeouts</td></tr>
+        <tr><td>Inanición</td><td>Una estación nunca trabaja</td><td>Colas FIFO, semáforos con turno</td></tr>
+        <tr><td>Busy-wait</td><td>CPU al 100 % sin producir</td><td>Bloqueos reales (semáforos, cond. variables)</td></tr>
+      </table>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

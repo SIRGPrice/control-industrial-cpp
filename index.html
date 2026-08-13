@@ -1,14 +1,175 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b1115" />
-    <meta name="description" content="Guía interactiva de concurrencia en C++20 para control de plantas industriales." />
-    <title>Control Industrial · Concurrencia en C++20</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>C++ Concurrente · Semáforos, colas y control de planta industrial</title>
+  <meta name="description" content="Documentación completa de programación multihilo en C++ para ingenieros de control: semáforos, colas bloqueantes, patrones de sincronización y diseño de control de plantas industriales, con laboratorios interactivos.">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body data-page="index">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+
+      <section class="hero">
+        <p class="subtitle">Documentación para ingenieros de control de instalaciones</p>
+        <h1>Programación <span class="grad">multihilo en C++</span> para plantas industriales</h1>
+        <p class="lead">
+          Semáforos, colas bloqueantes y patrones de sincronización explicados desde el punto de vista
+          del control de instalaciones: hilos que coordinan cintas, prensas, robots, AGV y reguladores,
+          con <strong>laboratorios interactivos</strong> que muestran qué línea de código produce cada efecto en la planta.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="docs/hilos.html">Empezar por los fundamentos →</a>
+          <a class="btn btn-ghost" href="labs/fms.html">▶ Probar un laboratorio</a>
+        </div>
+      </section>
+
+      <h2>Aprende</h2>
+      <div class="cards">
+        <a class="card" href="docs/hilos.html">
+          <span class="card-icon">🧵</span>
+          <h3>Hilos con std::thread</h3>
+          <p>Crear, lanzar y reunir hilos; paso de parámetros, jthread y stop_token.</p>
+          <span class="tag">Fundamentos</span>
+        </a>
+        <a class="card" href="docs/riesgos.html">
+          <span class="card-icon">⚠️</span>
+          <h3>Riesgos del estado compartido</h3>
+          <p>Condiciones de carrera, atomicidad y por qué el código «funciona en las pruebas».</p>
+          <span class="tag">Fundamentos</span>
+        </a>
+        <a class="card" href="docs/mutex.html">
+          <span class="card-icon">🔒</span>
+          <h3>Mutex y candados RAII</h3>
+          <p>lock_guard, unique_lock y scoped_lock para regiones críticas seguras.</p>
+          <span class="tag">Fundamentos</span>
+        </a>
+        <a class="card" href="docs/condvar.html">
+          <span class="card-icon">🔔</span>
+          <h3>Variables de condición</h3>
+          <p>Esperar por condiciones reales sin consumir CPU: wait, notify, predicados.</p>
+          <span class="tag">Fundamentos</span>
+        </a>
+        <a class="card" href="docs/semaforos.html">
+          <span class="card-icon">🚦</span>
+          <h3>Semáforos</h3>
+          <p>La herramienta clásica de Dijkstra: teoría, API de C++20 y usos industriales.</p>
+          <span class="tag">Semáforos</span>
+        </a>
+        <a class="card" href="docs/colas.html">
+          <span class="card-icon">📮</span>
+          <h3>Colas seguras</h3>
+          <p>Construir colas bloqueantes productor–consumidor con mutex y variables de condición.</p>
+          <span class="tag">Colas</span>
+        </a>
+      </div>
+
+      <h2>Aplica patrones</h2>
+      <div class="cards">
+        <a class="card" href="docs/productor-consumidor.html">
+          <span class="card-icon">🏭</span>
+          <h3>Productor–consumidor</h3>
+          <p>El patrón central de toda planta: buffers entre estaciones, capacidad limitada.</p>
+        </a>
+        <a class="card" href="docs/lectores-escritores.html">
+          <span class="card-icon">📖</span>
+          <h3>Lectores–escritores</h3>
+          <p>Recursos compartidos con muchos lectores y escritores ocasionales: pasillos, tablas, almacenes.</p>
+        </a>
+        <a class="card" href="docs/barrera-rendezvous.html">
+          <span class="card-icon">🤝</span>
+          <h3>Barrera y rendezvous</h3>
+          <p>Puntos de encuentro entre hilos: lotes, fases de proceso, arranques coordinados.</p>
+        </a>
+        <a class="card" href="docs/pipeline.html">
+          <span class="card-icon">➡️</span>
+          <h3>Pipeline y cintas</h3>
+          <p>Cadenas de etapas encadenadas por semáforos y colas: cintas, máquinas, transfer.</p>
+        </a>
+      </div>
+
+      <h2>Diseña tu planta</h2>
+      <div class="cards">
+        <a class="card" href="docs/planta-arquitectura.html">
+          <span class="card-icon">🏗️</span>
+          <h3>Arquitectura de control</h3>
+          <p>Cómo traducir una instalación física a hilos, semáforos y colas de mensajes.</p>
+          <span class="tag">Control de planta</span>
+        </a>
+        <a class="card" href="docs/planta-diseno.html">
+          <span class="card-icon">📐</span>
+          <h3>Diseño paso a paso</h3>
+          <p>Método completo: inventario de elementos, recursos, sincronizaciones y mensajes.</p>
+          <span class="tag">Control de planta</span>
+        </a>
+        <a class="card" href="docs/planta-super.html">
+          <span class="card-icon">🛰️</span>
+          <h3>Supervisión, alarmas y parada</h3>
+          <p>Hilo supervisor, cola de alarmas, timeouts y parada ordenada con jthread.</p>
+          <span class="tag">Control de planta</span>
+        </a>
+      </div>
+
+      <h2>Laboratorios interactivos</h2>
+      <p>Simuladores ejecutables en el navegador: cada hilo muestra su código y la línea exacta que está ejecutando;
+      los semáforos y colas cambian de valor en vivo y la planta reacciona. Puedes avanzar paso a paso.</p>
+      <div class="cards">
+        <a class="card" href="labs/fms.html">
+          <span class="card-icon">🤖</span>
+          <h3>Célula FMS: prensa, CNC y robot</h3>
+          <p>Cuatro hilos coordinados con seis semáforos productor/consumidor y el robot como región crítica.</p>
+          <span class="tag">Semáforos</span>
+        </a>
+        <a class="card" href="labs/envasado.html">
+          <span class="card-icon">🧴</span>
+          <h3>Línea de envasado</h3>
+          <p>Buffer limitado entre llenadora y empaquetadora: huecos, elementos y mutex.</p>
+          <span class="tag">Buffer limitado</span>
+        </a>
+        <a class="card" href="labs/cadena.html">
+          <span class="card-icon">⚙️</span>
+          <h3>Línea de mecanizado con colas</h3>
+          <p>Seis hilos pasando mensajes por colas bloqueantes; observa el backpressure del cuello de botella.</p>
+          <span class="tag">Colas</span>
+        </a>
+      </div>
+
+      <h2>Consulta permanente</h2>
+      <div class="cards">
+        <a class="card" href="ref/cheatsheet.html">
+          <span class="card-icon">📋</span>
+          <h3>Hoja de referencia</h3>
+          <p>API de &lt;thread&gt;, &lt;mutex&gt;, &lt;condition_variable&gt; y &lt;semaphore&gt; de un vistazo.</p>
+        </a>
+        <a class="card" href="ref/errores.html">
+          <span class="card-icon">🐞</span>
+          <h3>Errores comunes</h3>
+          <p>Deadlocks, signal perdidos, wait sin predicado… y cómo evitarlos.</p>
+        </a>
+        <a class="card" href="ref/ejercicios.html">
+          <span class="card-icon">✏️</span>
+          <h3>Ejercicios resueltos</h3>
+          <p>Instalaciones completas resueltas con el estilo clásico de semáforos sp/sc.</p>
+        </a>
+        <a class="card" href="ref/glosario.html">
+          <span class="card-icon">📚</span>
+          <h3>Glosario</h3>
+          <p>Región crítica, inanición, prioridad inversa… el vocabulario esencial.</p>
+        </a>
+      </div>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <footer id="site-footer">
+    <span>C++ Concurrente · Control industrial</span>
+    <span>Documentación abierta — GitHub Pages</span>
+  </footer>
+  <script src="js/app.js"></script>
+</body>
 </html>

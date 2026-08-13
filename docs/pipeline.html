@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pipeline y cintas · C++ Concurrente</title>
+  <meta name="description" content="Cadenas de etapas concurrentes: pipelines con semáforos sp/sc, cintas transportadoras entre máquinas y el transfer como región crítica.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="pipeline">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Patrones clásicos</p>
+      <h1>Pipeline y cintas</h1>
+      <p class="lead">Una línea de producción es un pipeline natural: cada pieza pasa por las etapas 1, 2, 3… en
+      orden, y cada etapa trabaja a la vez sobre piezas distintas. El truco para que el paralelismo sea real es que
+      cada etapa sea un hilo y cada junta, una pareja productor/consumidor.</p>
+
+      <h2>El esquema general</h2>
+      <p>Para K etapas se necesitan K relaciones productor/consumidor: la de entrada de la primera etapa y la de
+      cada junta. En el estilo clásico, dos vectores de semáforos:</p>
+      <pre data-lang="cpp" data-file="pipeline_semaforos.cpp"><code>// sp[i] = hueco libre a la entrada de la etapa i (inicial = capacidad)
+// sc[i] = pieza presente a la entrada de la etapa i (inicial = 0)
+Semaforo sp[K];   // todos a su capacidad
+Semaforo sc[K];   // todos a 0</code></pre>
+      <p>Cada etapa i ejecuta siempre el mismo esqueleto:</p>
+      <pre data-lang="cpp"><code>void hEtapa(int i) {
+    while (true) {
+        sc[i].wait();          // 1) espera la pieza de la etapa anterior
+        procesar(i);           // 2) trabaja (la etapa anterior ya puede seguir)
+        sp[i + 1].wait();      // 3) espera hueco en la siguiente
+        transferir(i, i + 1);  // 4) mueve la pieza
+        sp[i].signal();        // 5) libera su entrada
+        sc[i + 1].signal();    // 6) avisa a la siguiente etapa
+    }
+}</code></pre>
+      <p>El orden de los pasos 5 y 6 es indiferente, pero el paso 3 debe ir <strong>después</strong> del procesado:
+      si la etapa esperara hueco para soltar antes de terminar su trabajo, la pieza anterior quedaría retenida y el
+      pipeline perdería paralelismo.</p>
+
+      <h2>El transfer compartido: región crítica</h2>
+      <p>En muchas máquinas (ej61 del cuaderno) un único sistema transfer mueve las piezas entre posiciones. Como
+      lo necesitan todas las etapas a la vez, es región crítica:</p>
+      <pre data-lang="cpp"><code>Semaforo sTransfer(1);       // el transfer es de uno en uno
+
+void mueve(int origen, int destino) {
+    sTransfer.wait();
+    transfiere(origen, destino);
+    sTransfer.signal();
+}</code></pre>
+      <p>Igual se trata cualquier recurso de transporte único: el robot de la célula FMS, la grúa del pulmón, el
+      carro electroimán entre cintas.</p>
+
+      <h2>Cintas transportadoras entre etapas</h2>
+      <p>Cuando entre dos máquinas hay una cinta, la cinta también tiene su hilo, que hace de consumidor de la
+      máquina anterior y productor de la siguiente:</p>
+      <pre data-lang="cpp" data-file="hilo_cinta.cpp"><code>void hCinta(int c) {
+    while (true) {
+        cinta(c, 0);                    // parada por defecto (ahorro)
+        sCintaP[c].wait();              // ¿puedo recibir? (hueco en la cinta)
+        sCintaC[c - 1].wait();          // ¿hay pieza esperándome?
+        cinta(c, 1);                    // en marcha
+        while (!barrera(c + 1));        // hasta que la pieza llegue al final
+        cinta(c, 0);                    // parar
+        sMaquinaC[c].signal();          // avisa a la máquina de delante
+        sMaquinaP[c - 1].signal();      // libera a la máquina de detrás
+    }
+}</code></pre>
+      <div class="callout note">
+        <div class="co-title">📘 Nota</div>
+        <p>El <code>while (!barrera(c+1));</code> es una espera por sondeo al hardware; en un sistema con semáforos
+        ligados a interrupciones se sustituiría por un <code>wait</code>. El cuaderno lo deja como sondeo porque
+        modela la lectura directa del sensor.</p>
+      </div>
+
+      <h2>Ritmo y cuello de botella</h2>
+      <p>El throughput de un pipeline lo marca su etapa más lenta. Si la etapa 2 tarda el doble, las etapas 1 y 3
+      pasarán la mitad del tiempo bloqueadas en <code>sp[2].wait()</code> / <code>sc[1].wait()</code>. Consecuencias
+      de diseño:</p>
+      <ul>
+        <li>Los buffers intermedios <strong>no aumentan el ritmo sostenido</strong>; solo absorben variaciones puntuales.</li>
+        <li>Si una etapa es lenta y cara de mejorar, se duplica (dos máquinas en paralelo con un repartidor), lo que
+        se modela con un semáforo contador de máquinas libres.</li>
+        <li>La ocupación de las colas indica dónde está el cuello de botella: se ve en el
+        <a href="../labs/cadena.html">laboratorio de colas</a>.</li>
+      </ul>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

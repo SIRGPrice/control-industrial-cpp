@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laboratorio · Línea de envasado · C++ Concurrente</title>
+  <meta name="description" content="Simulador interactivo del patrón productor-consumidor con buffer limitado: llenadora y empaquetadora coordinadas con sHuecos, sBotellas y sMutex.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="lab-env">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Laboratorio 2 · Buffer limitado</p>
+      <h1>Línea de envasado</h1>
+      <p class="lead">El patrón productor–consumidor en su forma pura: una llenadora produce botellas, una
+      empaquetadora las retira, y entre medias un buffer de 4 posiciones protegido por tres semáforos:
+      <code>sHuecos</code>, <code>sBotellas</code> y <code>sMutex</code>.</p>
+
+      <h2>Qué observar</h2>
+      <ul>
+        <li>Cuando el buffer se llena, la llenadora queda <strong>bloqueada en <code>wait(sHuecos)</code></strong>: es la
+        capacidad física la que detiene la producción, no un if.</li>
+        <li>Cuando el buffer se vacía, la empaquetadora queda <strong>bloqueada en <code>wait(sBotellas)</code></strong>.</li>
+        <li>Los tiempos de llenado y empaquetado son aleatorios: fíjate en la ocupación media del buffer como
+        indicador del equilibrio de la línea.</li>
+        <li>El contador de <em>bloqueos del productor</em> mide cuántas veces la llenadora tuvo que esperar hueco.</li>
+      </ul>
+
+      <div id="lab" class="lab-shell"></div>
+
+      <h2>Mapa semáforo → significado</h2>
+      <table>
+        <tr><th>Semáforo</th><th>Inicial</th><th>Una unidad significa…</th></tr>
+        <tr><td><code>sHuecos</code></td><td>4</td><td>una posición libre del buffer</td></tr>
+        <tr><td><code>sBotellas</code></td><td>0</td><td>una botella llena disponible</td></tr>
+        <tr><td><code>sMutex</code></td><td>1</td><td>permiso para tocar la cola del buffer</td></tr>
+      </table>
+
+      <h2>Qué línea produce qué efecto</h2>
+      <table class="line-map">
+        <tr><th>Línea</th><th>Efecto en la planta</th></tr>
+        <tr><td>hEnvasadora:3 llenarBotella()</td><td>La llenadora trabaja; aparece el chorro.</td></tr>
+        <tr><td>hEnvasadora:4 wait(sHuecos)</td><td>Si el buffer está lleno (valor 0), la llenadora se bloquea.</td></tr>
+        <tr><td>hEnvasadora:6 buffer.push(b)</td><td>Una botella aparece en un slot del buffer.</td></tr>
+        <tr><td>hEnvasadora:8 signal(sBotellas)</td><td>Si la empaquetadora dormía esperando botella, despierta.</td></tr>
+        <tr><td>hEmpaquetadora:3 wait(sBotellas)</td><td>Se bloquea si no hay botellas (buffer vacío).</td></tr>
+        <tr><td>hEmpaquetadora:5 buffer.pop()</td><td>Desaparece una botella del buffer.</td></tr>
+        <tr><td>hEmpaquetadora:7 signal(sHuecos)</td><td>Si la llenadora dormía esperando hueco, despierta.</td></tr>
+        <tr><td>hEmpaquetadora:8 empaquetar(b)</td><td>La empaquetadora trabaja; cuenta de empaquetadas sube.</td></tr>
+      </table>
+
+      <h2>Código C++20 equivalente</h2>
+      <pre data-lang="cpp" data-file="linea_envasado.cpp"><code>#include &lt;semaphore&gt;
+#include &lt;mutex&gt;
+#include &lt;queue&gt;
+#include &lt;thread&gt;
+
+constexpr int N = 4;                          // capacidad del buffer
+
+std::counting_semaphore&lt;N&gt; sHuecos(N);       // N huecos al empezar
+std::counting_semaphore&lt;N&gt; sBotellas(0);     // ninguna botella
+std::mutex sMutex;                           // protege la cola
+std::queue&lt;Botella&gt; buffer;
+
+void hEnvasadora() {
+    while (true) {
+        Botella b = llenarBotella();
+        sHuecos.acquire();                // espera hueco libre
+        {
+            std::lock_guard lk(sMutex);   // región crítica
+            buffer.push(b);
+        }                                 // el mutex se libera aquí (RAII)
+        sBotellas.release();              // una botella más disponible
+    }
+}
+
+void hEmpaquetadora() {
+    while (true) {
+        sBotellas.acquire();              // espera botella llena
+        Botella b;
+        {
+            std::lock_guard lk(sMutex);   // región crítica
+            b = buffer.front();
+            buffer.pop();
+        }                                 // mutex liberado
+        sHuecos.release();                // un hueco liberado
+        empaquetar(b);
+    }
+}
+
+int main() {
+    std::jthread t1(hEnvasadora), t2(hEmpaquetadora);
+}</code></pre>      <div class="callout warning">
+        <div class="co-title">⚠ Comparación con la simulación</div>
+        <p>Fíjate en la correspondencia uno a uno: <code>acquire()</code> ≡ <code>wait</code> y
+        <code>release()</code> ≡ <code>signal</code>. En la simulación el <code>wait(sMutex)</code> aparece como
+        línea explícita; aquí el <code>lock_guard</code> lo hace por RAII dentro del ámbito.</p>
+      </div>
+
+      <h2>Experimentos propuestos</h2>
+      <ol>
+        <li>Observa un bloqueo completo: llena el buffer y comprueba cómo la llenadora espera exactamente hasta el
+        <code>signal(sHuecos)</code> de la empaquetadora.</li>
+        <li>Imagina <code>N = 1</code>: ¿qué cambiaría en el KPI de ocupación media? ¿Y si <code>N = 100</code>?</li>
+        <li>¿Qué pasaría si la empaquetadora olvidara hacer <code>signal(sHuecos)</code>? El simulador te lo muestra:
+        prueba a razonarlo antes de mirarlo en <a href="../ref/errores.html">Errores comunes</a>.</li>
+      </ol>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+  <script src="../js/motor.js"></script>
+  <script src="../js/lab-envasado.js"></script>
+</body>
+</html>

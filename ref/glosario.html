@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Glosario · C++ Concurrente</title>
+  <meta name="description" content="Vocabulario esencial de la programación concurrente aplicada a control industrial: región crítica, semáforo, inanición, backpressure, watchdog y más.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="glosario">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Referencia</p>
+      <h1>Glosario</h1>
+      <p class="lead">El vocabulario mínimo para hablar de concurrencia en planta, con su lectura física.</p>
+
+      <h2>Conceptos de sincronización</h2>
+      <table>
+        <tr><th>Término</th><th>Definición</th><th>Lectura industrial</th></tr>
+        <tr><td><strong>Región crítica</strong></td><td>Tramo de código que accede a datos compartidos y debe ejecutarse sin interrupciones de otros hilos.</td><td>El momento en que la grúa maneja la pieza: nadie más puede usarla.</td></tr>
+        <tr><td><strong>Semáforo</strong></td><td>Contador con operaciones wait (P) y signal (V); bloquea si intenta esperar con valor 0.</td><td>El semáforo de tráfico del que toma nombre: permiso para avanzar.</td></tr>
+        <tr><td><strong>Mutex</strong></td><td>Semáforo binario de exclusión mutua; un solo poseedor a la vez.</td><td>La llave de la única herramienta compartida.</td></tr>
+        <tr><td><strong>Variable de condición</strong></td><td>Primitiva para dormir un hilo hasta que una condición booleana se cumpla, sin sondeo.</td><td>«Avísame cuando llegue la pieza».</td></tr>
+        <tr><td><strong>Condición de carrera</strong></td><td>Resultado que depende del entrelazado de los hilos; normalmente erróneo.</td><td>Dos cintas cuentan la misma caja.</td></tr>
+        <tr><td><strong>Data race</strong></td><td>Acceso concurrente sin sincronización a la misma memoria (comportamiento indefinido).</td><td>Dos hilos escriben el mismo registro de E/S a la vez.</td></tr>
+        <tr><td><strong>Deadlock / interbloqueo</strong></td><td>Todos los hilos esperan un recurso que otro retiene; nadie avanza.</td><td>La línea entera parada porque dos estaciones se esperan entre sí.</td></tr>
+        <tr><td><strong>Inanición (starvation)</strong></td><td>Un hilo nunca consigue el recurso porque otros lo acaparan.</td><td>Una máquina que nunca recibe piezas.</td></tr>
+        <tr><td><strong>Inversión de prioridad</strong></td><td>Un hilo de alta prioridad espera a otro de baja que retiene un recurso.</td><td>La alarma de temperatura espera a que termine el hilo de registro.</td></tr>
+        <tr><td><strong>Busy-wait</strong></td><td>Espera por consulta repetida; consume CPU.</td><td>El hilo que mira el sensor miles de veces por segundo.</td></tr>
+        <tr><td><strong>Atomicidad</strong></td><td>Propiedad de ejecutarse como operación indivisible.</td><td>Leer-y-fijar la posición de la grúa en un solo paso.</td></tr>
+      </table>
+
+      <h2>Patrones</h2>
+      <table>
+        <tr><th>Término</th><th>Definición</th><th>Lectura industrial</th></tr>
+        <tr><td><strong>Productor–consumidor</strong></td><td>Un hilo produce elementos, otro los consume, con buffer de capacidad finita entre ambos.</td><td>Llenadora → buffer → empaquetadora.</td></tr>
+        <tr><td><strong>Lectores–escritores</strong></td><td>Acceso compartido para lecturas y exclusivo para escrituras.</td><td>Pasillo de AGV con sentido único, tabla de configuración.</td></tr>
+        <tr><td><strong>Barrera</strong></td><td>Punto donde N hilos esperan a los demás antes de continuar.</td><td>Los 4 dosificadores descargan a la vez.</td></tr>
+        <tr><td><strong>Rendezvous</strong></td><td>Cita entre dos hilos que esperan su llegada mutua.</td><td>Robot y prensa terminan antes de abrir la guarda.</td></tr>
+        <tr><td><strong>Pipeline</strong></td><td>Cadena de etapas concurrentes; cada pieza las recorre en orden.</td><td>La línea de mecanizado M1→M2→M3.</td></tr>
+        <tr><td><strong>Backpressure</strong></td><td>Propagación del bloqueo aguas arriba cuando un buffer se llena.</td><td>La tolva se detiene porque M2 va lenta.</td></tr>
+      </table>
+
+      <h2>Mecanismos y herramientas</h2>
+      <table>
+        <tr><th>Término</th><th>Definición</th></tr>
+        <tr><td><strong>RAII</strong></td><td>Gestión de recursos por ámbito: el candado se suelta al salir, sí o sí.</td></tr>
+        <tr><td><strong>std::jthread</strong></td><td>Hilo que se une solo al destruirse y admite parada cooperativa.</td></tr>
+        <tr><td><strong>stop_token</strong></td><td>Señal de parada que un hilo consulta para salir de forma ordenada.</td></tr>
+        <tr><td><strong>std::scoped_lock</strong></td><td>Toma varios mutex de una vez evitando deadlock.</td></tr>
+        <tr><td><strong>std::shared_mutex</strong></td><td>Mutex con dos modos: lectura compartida / escritura exclusiva.</td></tr>
+        <tr><td><strong>ThreadSanitizer</strong></td><td>Sanitizer que detecta data races en ejecución.</td></tr>
+        <tr><td><strong>Helgrind</strong></td><td>Herramienta de Valgrind para errores de sincronización.</td></tr>
+        <tr><td><strong>Watchdog</strong></td><td>Espera con límite de tiempo que convierte un bloqueo en diagnóstico.</td></tr>
+        <tr><td><strong>HMI / SCADA</strong></td><td>Interfaz de operador y sistema de supervisión que consume las colas de eventos.</td></tr>
+        <tr><td><strong>OEE / KPI</strong></td><td>Indicadores de rendimiento que el supervisor calcula a partir de los eventos.</td></tr>
+      </table>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>

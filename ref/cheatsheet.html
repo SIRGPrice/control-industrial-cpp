@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hoja de referencia · C++ Concurrente</title>
+  <meta name="description" content="API de referencia de hilos, mutex, variables de condición, semáforos y colas de C++17/20 de un vistazo.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../css/estilos.css">
+</head>
+<body data-page="cheat">
+  <header id="topbar"></header>
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <article id="content">
+      <p class="subtitle">Referencia</p>
+      <h1>Hoja de referencia</h1>
+      <p class="lead">Toda la API que necesitas de un vistazo. Compila con <code>-std=c++20 -pthread</code>
+      (GCC/Clang) o <code>/std:c++20 /EHsc</code> (MSVC).</p>
+
+      <h2>Hilos</h2>
+      <pre data-lang="cpp"><code>#include &lt;thread&gt;          #include &lt;jthread&gt;      // C++20
+
+std::thread t(f, args);    // lanza f(args)
+t.join();                  // espera y libera
+t.detach();                // desenlaza (evitar)
+
+std::jthread j(f, args);   // join automático al destruirse
+j.request_stop();          // pide parada cooperativa
+
+// dentro del hilo:
+std::this_thread::sleep_for(std::chrono::milliseconds(10));
+std::this_thread::yield();
+std::this_thread::get_id();
+
+// argumentos: copia; usa std::ref(x) para referencias</code></pre>
+
+      <h2>Mutex y candados</h2>
+      <pre data-lang="cpp"><code>#include &lt;mutex&gt;           #include &lt;shared_mutex&gt;
+
+std::mutex m;
+std::lock_guard lk(m);            // toma/suelta por ámbito (RAII)
+std::unique_lock lk(m);           // igual pero desbloqueable; para cv
+std::scoped_lock lk(m1, m2);      // varios sin deadlock
+std::shared_mutex m;              // lectores/escritor
+std::shared_lock lk(m);           // lector compartido
+
+m.lock(); m.unlock();             // a mano: evitar
+m.try_lock();                     // intenta sin bloquear (bool)</code></pre>
+
+      <h2>Variables de condición</h2>
+      <pre data-lang="cpp"><code>#include &lt;condition_variable&gt;
+
+std::mutex m;
+std::condition_variable cv;
+bool condicion;
+
+// productor:
+{ std::lock_guard lk(m); condicion = true; }
+cv.notify_one();                  // o notify_all()
+
+// consumidor:
+std::unique_lock lk(m);
+cv.wait(lk, [] { return condicion; });       // SIEMPRE con predicado
+cv.wait_for(lk, std::chrono::seconds(5), pred);   // timeout → false</code></pre>
+
+      <h2>Semáforos (C++20)</h2>
+      <pre data-lang="cpp"><code>#include &lt;semaphore&gt;
+
+std::counting_semaphore&lt;10&gt; s(10);  // contador: máx 10, inicial 10
+std::binary_semaphore e(0);         // binario: inicial 0
+
+s.acquire();            // wait / P
+s.release();            // signal / V
+s.try_acquire();        // bool, sin bloquear
+s.try_acquire_for(d);   // bool, con límite de tiempo
+s.try_acquire_until(t); // bool, hasta un instante</code></pre>
+
+      <h2>Atómicos</h2>
+      <pre data-lang="cpp"><code>#include &lt;atomic&gt;
+
+std::atomic&lt;int&gt; n{0};
+std::atomic&lt;bool&gt; parar{false};
+
+n.store(5);  n.load();  n++;  n += 1;
+n.exchange(v);
+n.compare_exchange_weak(exp, v);   // CAS
+parar.wait(false);  parar.store(true);  parar.notify_one();  // C++20</code></pre>
+
+      <h2>Cola bloqueante (patrón)</h2>
+      <pre data-lang="cpp"><code>template &lt;typename T&gt;
+class ColaBloqueante {
+    std::queue&lt;T&gt; datos;
+    mutable std::mutex m;
+    std::condition_variable noVacia, noLlena;
+    size_t capacidad;
+public:
+    explicit ColaBloqueante(size_t cap) : capacidad(cap) {}
+
+    void push(T item) {
+        std::unique_lock lk(m);
+        noLlena.wait(lk, [&amp;] { return datos.size() &lt; capacidad; });
+        datos.push(std::move(item));
+        noVacia.notify_one();
+    }
+
+    T pop() {
+        std::unique_lock lk(m);
+        noVacia.wait(lk, [&amp;] { return !datos.empty(); });
+        T item = std::move(datos.front());
+        datos.pop();
+        noLlena.notify_one();
+        return item;
+    }
+};</code></pre>
+
+      <h2>Correspondencias clásico ↔ C++</h2>
+      <table>
+        <tr><th>Estilo SCTR</th><th>C++ moderno</th></tr>
+        <tr><td><code>semaforo s = N</code></td><td><code>std::counting_semaphore&lt;N&gt; s(N)</code></td></tr>
+        <tr><td><code>semaforo s = 1</code> (región crítica)</td><td><code>std::mutex</code> + candados RAII</td></tr>
+        <tr><td><code>wait(s) / signal(s)</code></td><td><code>s.acquire() / s.release()</code></td></tr>
+        <tr><td><code>concurrente { h1(); h2(); }</code></td><td><code>std::jthread t1(h1), t2(h2);</code></td></tr>
+        <tr><td>Pareja <code>sp*</code> / <code>sc*</code></td><td><code>ColaBloqueante</code> o dos semáforos</td></tr>
+        <tr><td><code>while (!sensor());</code></td><td>semáforo de evento / condición / interrupción</td></tr>
+      </table>
+
+      <h2>Compilación y verificación</h2>
+      <pre data-lang="bash"><code># Linux / GCC
+g++ -std=c++20 -Wall -Wextra -pthread planta.cpp -o planta
+
+# Sanitizer de carreras (Linux)
+g++ -std=c++20 -g -fsanitize=thread planta.cpp -o planta -pthread
+
+# Análisis con Valgrind (helgrind)
+valgrind --tool=helgrind ./planta</code></pre>
+
+      <nav id="pagenav"></nav>
+    </article>
+    <aside id="toc"></aside>
+  </main>
+  <script src="../js/app.js"></script>
+</body>
+</html>
